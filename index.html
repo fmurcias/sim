@@ -1,0 +1,2077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FPV Drone Sim</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#050a12;overflow:hidden;font-family:'Courier New',monospace}
+  canvas{display:block}
+
+  /* ── HUD ── */
+  #hud{position:fixed;inset:0;pointer-events:none;color:#00e5ff;font-size:12px}
+  #tele{position:absolute;top:12px;left:12px;line-height:2.1;text-shadow:0 0 8px rgba(0,229,255,.8)}
+  #tele span{color:#fff;font-size:13px}
+  #gps{position:absolute;top:12px;right:12px;font-size:11px;text-shadow:0 0 5px rgba(0,229,255,.6);color:#8abfcc}
+  #gate-hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:13px;
+    text-shadow:0 0 8px rgba(0,229,255,.8);background:rgba(5,10,18,.6);padding:3px 14px;
+    border:1px solid rgba(0,229,255,.2)}
+  #help{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:10px;
+    opacity:.45;white-space:nowrap;color:#7aaabb;letter-spacing:.3px}
+  #thr-bar{position:absolute;left:24px;bottom:30px;width:6px;height:70px;
+    border:1px solid rgba(0,229,255,.3);background:rgba(0,229,255,.04)}
+  #thr-fill{position:absolute;bottom:0;width:100%;
+    background:linear-gradient(to top,#ff6d00,#ffb830,#00e5ff);transition:height .05s}
+  #crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+  #fpv-hud{position:absolute;inset:0;pointer-events:none}
+  .mode-badge{position:absolute;bottom:12px;left:12px;font-size:10px;opacity:.55;
+    color:#00e5ff;letter-spacing:1px;background:rgba(5,10,18,.5);padding:2px 8px;
+    border:1px solid rgba(0,229,255,.15);pointer-events:all;cursor:pointer;transition:all .2s}
+  .mode-badge:hover{opacity:.9;border-color:rgba(0,229,255,.5)}
+  #hud-btn-row{position:absolute;bottom:12px;right:12px;display:flex;gap:8px;pointer-events:none}
+  #hud-btn-row>button{pointer-events:all}
+  #map-btn{background:rgba(5,14,30,.85);border:1px solid rgba(0,229,255,.4);color:#00e5ff;
+    font-family:'Courier New',monospace;font-size:10px;padding:6px 14px;cursor:pointer;
+    letter-spacing:1px;transition:all .2s}
+  #map-btn:hover{background:rgba(0,229,255,.12);border-color:#00e5ff;
+    box-shadow:0 0 16px rgba(0,229,255,.2)}
+
+  /* ── ATTITUDE INDICATOR (ADI) ── */
+  #adi-wrap{position:absolute;right:14px;bottom:56px;display:flex;flex-direction:column;
+    align-items:center;gap:3px}
+  #adi{display:block}
+  #adi-label{font-size:8px;color:rgba(0,229,255,.45);letter-spacing:2px}
+  #adi-angles{font-size:9px;color:rgba(0,229,255,.6);text-align:center;line-height:1.5}
+
+  /* ── SPLASH ── */
+  #splash{position:fixed;inset:0;
+    background:radial-gradient(ellipse at 30% 40%,#eef6f9 0%,#f7f8fa 70%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99}
+  #splash::before{content:'';position:absolute;inset:0;
+    background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(10,30,40,.035) 40px),
+               repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(10,30,40,.035) 40px);
+    pointer-events:none}
+  #splash h1{font-size:44px;letter-spacing:14px;margin-bottom:4px;
+    color:#0a7ea6;position:relative}
+  #splash .subtitle{font-size:11px;letter-spacing:4px;color:#8b98a3;margin-bottom:28px}
+
+  .splash-panel{display:flex;gap:16px;margin-bottom:20px;max-width:640px;width:100%;padding:0 16px}
+  .splash-box{flex:1;background:#fff;border:1px solid #d7dce1;padding:16px 18px}
+  .splash-box .box-title{font-size:10px;letter-spacing:3px;color:#b45309;margin-bottom:10px;font-weight:bold}
+  .tbl{font-size:13px}
+  .tbl .row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;
+    border-bottom:1px solid #eef1f4;color:#5a6b78}
+  .tbl .row:last-child{border-bottom:none}
+  .tbl .val-col{color:#0a7ea6;text-align:right;font-size:12px;letter-spacing:.5px}
+
+  .btn-g{background:#fff;border:1px solid #a9d3e0;color:#0a7ea6;
+    font-family:'Courier New',monospace;cursor:pointer;letter-spacing:2px;transition:all .2s}
+  .btn-g:hover{background:#eef6f9;border-color:#0a7ea6}
+  #btn-start{font-size:15px;padding:13px 52px;background:#0a7ea6;color:#fff;border-color:#0a7ea6}
+  #btn-start:hover{background:#086a8c;border-color:#086a8c}
+
+  /* ── ATTITUDE INDICATOR ── */
+  #atti-wrap{position:absolute;bottom:58px;right:12px;pointer-events:none}
+  #atti-label{font-size:8px;color:rgba(0,229,255,.4);letter-spacing:2px;
+    text-align:center;margin-bottom:3px}
+  #atti-nums{display:flex;justify-content:space-between;margin-top:3px;
+    font-size:9px;color:rgba(0,229,255,.55)}
+  #atti-roll-disp{text-align:left}
+  #atti-pitch-disp{text-align:right}
+  #map-modal{position:fixed;inset:0;background:rgba(20,26,32,.55);z-index:80;
+    display:none;align-items:center;justify-content:center}
+  #map-modal.open{display:flex}
+  #map-card{width:740px;max-width:96vw;
+    background:#f7f8fa;box-shadow:0 8px 40px rgba(20,26,32,.25),0 0 0 1px #d7dce1;
+    max-height:94vh;overflow-y:auto}
+  .modal-header{padding:18px 28px 16px;
+    background:#eef1f4;
+    border-bottom:1px solid #d7dce1;display:flex;align-items:center}
+  .modal-header h2{font-size:18px;letter-spacing:4px;color:#1c2733;flex:1}
+  .modal-body{padding:12px 18px}
+
+  .sec-title{font-size:13px;color:#b45309;letter-spacing:1.5px;margin-bottom:8px;margin-top:14px;
+    display:flex;align-items:center;gap:10px;font-weight:bold}
+  .sec-title::after{content:'';flex:1;height:1px;background:#e3ccb0}
+
+  /* axes monitor */
+  #axes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:5px}
+  .ax-row{display:flex;align-items:center;gap:8px;font-size:14px;
+    background:#fff;padding:5px 8px;border:1px solid #d7dce1}
+  .ax-lbl{width:64px;color:#5a6b78;font-size:14px}
+  .bw{flex:1;height:6px;background:#eef1f4;border:1px solid #d7dce1;
+    position:relative;overflow:hidden}
+  .bc{position:absolute;left:50%;top:0;width:1px;height:100%;background:#c3cad1}
+  .bv{position:absolute;top:0;height:100%;background:#0a7ea6;transition:left .04s,width .04s}
+  .ax-num{width:58px;text-align:right;color:#5a6b78;font-size:14px}
+  .ax-badge{font-size:11px;padding:1px 6px;border:1px solid #d9a76a;
+    color:#b45309;letter-spacing:.5px;white-space:nowrap;display:none;
+    background:#fbf0e2}
+  .ax-badge.vis{display:inline-block}
+
+  /* ── MODE 2 compact strip ── */
+  #mode2-strip{display:flex;gap:0;align-items:stretch;margin:6px 0 8px;
+    border:1px solid #d7dce1;overflow:hidden}
+  .m2-cell{flex:1;padding:6px 8px;display:flex;flex-direction:column;gap:2px;
+    border-right:1px solid #d7dce1}
+  .m2-cell:last-child{border-right:none}
+  .m2-cell.left-stick{background:#fbf3ea}
+  .m2-cell.right-stick{background:#eef6f9}
+  .m2-header{font-size:12px;letter-spacing:1.5px;color:#b45309;margin-bottom:3px;font-weight:bold}
+  .m2-header.right{color:#0a7ea6}
+  .m2-line{font-size:14px;color:#1c2733;display:flex;justify-content:space-between;gap:6px}
+  .m2-line span{color:#5a6b78;font-size:12px}
+
+  /* channel table */
+  #ch-table{width:100%;border-collapse:collapse;font-size:16px;margin-bottom:4px}
+  #ch-table th{font-size:12px;color:#b45309;letter-spacing:1px;padding:5px 6px;
+    font-weight:bold;text-align:left;border-bottom:1px solid #e3ccb0}
+  #ch-table td{padding:6px 6px;vertical-align:middle;border-bottom:1px solid #e6e9ec}
+  #ch-table tr:last-child td{border-bottom:none}
+  #ch-table select{background:#fff;color:#1c2733;border:1px solid #c3cad1;
+    font-family:'Courier New',monospace;font-size:14px;padding:5px 6px;cursor:pointer;width:114px}
+  .inv-chk{width:16px;height:16px;cursor:pointer;accent-color:#0a7ea6}
+  .chbw{height:6px;background:#eef1f4;border:1px solid #d7dce1;
+    position:relative;overflow:hidden;min-width:108px}
+  .chbv{position:absolute;top:0;height:100%;background:#0a7ea6;transition:left .04s,width .04s}
+  .chbc{position:absolute;left:50%;top:0;width:1px;height:100%;background:#c3cad1}
+  .det-btn{background:#fff;border:1px solid #c3cad1;color:#1c2733;
+    font-family:'Courier New',monospace;font-size:15px;padding:6px 10px;cursor:pointer;
+    letter-spacing:.5px;white-space:nowrap;min-width:104px;transition:all .2s}
+  .det-btn:hover{background:#eef6f9;border-color:#0a7ea6}
+  .det-btn.active{border-color:#b45309;color:#b45309;animation:blink .55s infinite alternate}
+  .det-btn.ok{border-color:#0a7ea6;color:#0a7ea6;background:#eef6f9}
+  @keyframes blink{from{opacity:.4}to{opacity:1}}
+
+  /* channel info cell */
+  .ch-info{display:flex;flex-direction:column;gap:2px}
+  .ch-name{font-size:15px;color:#1c2733;letter-spacing:.5px}
+  .ch-sub{font-size:11px;color:#5a6b78}
+  .ch-tag{display:inline-block;font-size:11px;padding:1px 5px;
+    border:1px solid #a9d3e0;color:#0a7ea6;background:#eef6f9}
+  .ch-tag.left{border-color:#d9a76a;color:#b45309;background:#fbf0e2}
+
+  /* deadband */
+  #db-row{display:flex;align-items:center;gap:12px;margin:8px 0 10px}
+  #db-row label{font-size:14px;color:#5a6b78;white-space:nowrap}
+  #db-slider{flex:1;accent-color:#0a7ea6;cursor:pointer}
+  #db-disp{font-size:15px;min-width:40px;text-align:right;color:#0a7ea6}
+
+  /* wizard */
+  #wiz-row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+  #wiz-btn{font-size:16px;padding:9px 18px}
+  #wiz-status{font-size:14px;color:#b45309;letter-spacing:.3px;min-height:18px}
+
+  /* footer */
+  #map-footer{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 18px;border-top:1px solid #d7dce1;background:#eef1f4;gap:8px}
+  .footer-left{display:flex;flex-direction:column;gap:2px;min-width:0}
+  #save-status{font-size:12px;color:#8b98a3;letter-spacing:1px;white-space:nowrap}
+  #save-ts{font-size:11px;color:#a8b2ba;letter-spacing:.5px;min-height:13px}
+  .footer-btns{display:flex;gap:8px;align-items:center;flex-shrink:0}
+  #save-btn{font-size:15px;padding:9px 18px;color:#0a7ea6;border:1px solid #a9d3e0;background:#fff}
+  #save-btn:hover{background:#eef6f9;border-color:#0a7ea6;box-shadow:none;text-shadow:none}
+  #reset-btn{font-size:15px;padding:9px 14px;color:#b45309;border:1px solid #d9a76a;background:#fff}
+  #reset-btn:hover{border-color:#b45309;color:#b45309;background:#fbf0e2;box-shadow:none;text-shadow:none}
+  #close-btn{font-size:16px;padding:11px 24px;color:#0a7ea6;border:1px solid #a9d3e0;background:#fff}
+  #close-btn:hover{background:#eef6f9;border-color:#0a7ea6;box-shadow:none;text-shadow:none}
+  #no-gp{font-size:14px;color:#b45309;display:none}
+
+  /* ── TOAST ── */
+  #toast{position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-60px);
+    background:#0d2035;border:1px solid rgba(0,229,255,.4);color:#00e5ff;
+    font-family:'Courier New',monospace;font-size:11px;letter-spacing:2px;
+    padding:9px 24px;z-index:200;transition:transform .3s ease,opacity .3s ease;
+    opacity:0;pointer-events:none;white-space:nowrap;
+    box-shadow:0 0 30px rgba(0,229,255,.1)}
+  #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+  /* ── ANALYSIS PANEL ── */
+  .ap-title{font-size:13px;color:#b45309;letter-spacing:1.5px;margin-bottom:8px}
+  .ap-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+  .ap-item{font-size:13px;color:#5a6b78;line-height:1.5;padding:6px 8px;
+    background:#fff;border:1px solid #e6e9ec}
+  .ap-item strong{color:#1c2733;display:block;font-size:15px;margin-bottom:3px}
+  .ap-bar-wrap{height:4px;background:#eef1f4;margin-top:4px;border-radius:2px}
+  .ap-bar{height:100%;border-radius:2px;transition:width .4s ease}
+  .ap-note{grid-column:1/-1;font-size:13px;color:#5a6b78;padding:6px 8px;
+    border-left:2px solid #b45309;background:#fbf3ea}
+  .twr-badge{display:inline-block;font-size:12px;padding:1px 7px;margin-left:4px;
+    border:1px solid #a9d3e0;color:#0a7ea6;background:#eef6f9}
+
+  /* ── TABS ── */
+  #tabs{display:flex;gap:0;border-bottom:1px solid #d7dce1;
+    background:#eef1f4}
+  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:#5a6b78;
+    font-family:'Courier New',monospace;font-size:16px;letter-spacing:1.5px;padding:12px 20px;
+    cursor:pointer;margin-bottom:-1px;transition:all .2s}
+  .tab:hover{color:#0a7ea6;background:rgba(10,126,166,.06)}
+  .tab.active{color:#0a7ea6;border-bottom:2px solid #0a7ea6;
+    background:#fff}
+  .tab-panel{display:none}
+  .tab-panel.active{display:block}
+
+  /* ── PHYSICS PANEL ── */
+  .phy-presets{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .preset-btn{background:#fff;border:1px solid #c3cad1;color:#5a6b78;
+    font-family:'Courier New',monospace;font-size:15px;padding:7px 14px;cursor:pointer;
+    letter-spacing:1px;transition:all .2s}
+  .preset-btn:hover{background:#eef6f9;color:#0a7ea6;border-color:#0a7ea6}
+  .preset-btn.active{border-color:#0a7ea6;color:#0a7ea6;background:#eef6f9}
+  /* 2-column grid for physics sliders */
+  .phy-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+  .phy-grid-full{grid-column:1/-1}
+  .phy-row{display:flex;flex-direction:column;gap:3px;padding:7px 9px;
+    background:#fff;border:1px solid #e6e9ec}
+  .phy-row.idle-row{border-color:#e3ccb0;background:#fbf3ea}
+  .phy-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+  .phy-lbl{font-size:15px;color:#1c2733;flex:1}
+  .phy-lbl small{display:block;font-size:11px;color:#5a6b78;margin-top:1px}
+  .phy-val{font-size:15px;color:#0a7ea6;white-space:nowrap;min-width:58px;text-align:right;font-weight:bold}
+  .phy-row.idle-row .phy-val{color:#b45309}
+  .phy-slider{width:100%;accent-color:#0a7ea6;cursor:pointer;margin-top:1px}
+  .phy-row.idle-row .phy-slider{accent-color:#b45309}
+  .phy-section-idle{border-color:#e3ccb0!important;background:#fbf3ea!important}
+  .phy-section-idle .phy-lbl{color:#b45309}
+  .phy-section-idle .phy-val{color:#b45309}
+
+  /* ── CRASH FLASH ── */
+  #crash-flash{position:fixed;inset:0;pointer-events:none;z-index:50;opacity:0;
+    background:radial-gradient(ellipse at center, rgba(255,20,20,0) 35%, rgba(255,20,20,.4) 100%);
+    transition:opacity .35s ease-out}
+  #crash-flash.show{opacity:1;transition:opacity .04s}
+
+  /* ── SOUND / FULLSCREEN BUTTONS ── */
+  #sound-btn,#fullscreen-btn{background:rgba(5,14,30,.85);border:1px solid rgba(0,229,255,.4);color:#00e5ff;
+    font-family:'Courier New',monospace;font-size:10px;padding:6px 14px;cursor:pointer;
+    letter-spacing:1px;transition:all .2s}
+  #sound-btn:hover,#fullscreen-btn:hover{background:rgba(0,229,255,.12);border-color:#00e5ff;
+    box-shadow:0 0 16px rgba(0,229,255,.2)}
+  #fullscreen-btn{font-size:14px;line-height:1}
+
+  /* ── PROGRESSIVE DISCLOSURE (advanced sections) ── */
+  .adv-toggle{display:block;width:100%;text-align:left;background:#eef1f4;
+    border:1px solid #d7dce1;color:#5a6b78;font-family:'Courier New',monospace;
+    font-size:15px;letter-spacing:1px;padding:11px 12px;cursor:pointer;margin-top:14px;
+    transition:all .2s}
+  .adv-toggle:hover{color:#0a7ea6;border-color:#a9d3e0;background:#eef6f9}
+  .adv-toggle.open{color:#0a7ea6;border-color:#a9d3e0}
+  .adv-section{display:none;margin-top:4px}
+  .adv-section.open{display:block}
+
+  #preset-desc{font-size:14px;color:#5a6b78;padding:9px 10px;margin-bottom:4px;
+    background:#eef6f9;border-left:2px solid #0a7ea6;line-height:1.5}
+
+  .table-scroll{overflow-x:auto}
+
+  /* ── RESPONSIVE / MOBILE ── */
+  @media (max-width:640px){
+    #splash h1{font-size:30px;letter-spacing:7px}
+    #splash .subtitle{font-size:9px;letter-spacing:2px;margin-bottom:18px}
+    .splash-panel{flex-direction:column;gap:10px;margin-bottom:14px}
+    #btn-start{padding:13px 36px}
+
+    #map-modal{padding:0}
+    #map-card{width:100vw;max-width:100vw;max-height:100vh;height:100vh}
+    .modal-header{padding:14px 16px 12px}
+    .modal-header h2{font-size:15px;letter-spacing:3px}
+    .modal-body{padding:10px 12px}
+    .tab{flex:1;text-align:center;padding:12px 8px;font-size:14px;letter-spacing:1px}
+
+    #axes-grid,.phy-grid{grid-template-columns:1fr}
+    .phy-grid-full{grid-column:auto}
+    .sec-title{flex-wrap:wrap;row-gap:2px}
+    .sec-title small{flex-basis:100%}
+
+    #map-footer{flex-direction:column;align-items:stretch;gap:10px;padding:12px 14px}
+    .footer-left{align-items:center;text-align:center}
+    .footer-btns{justify-content:center;flex-wrap:wrap}
+    #save-btn,#reset-btn,#close-btn{flex:1;min-width:96px}
+
+    #help{display:none}
+    #tele{font-size:11px}
+    #gps{font-size:10px}
+    #gate-hud{font-size:12px;padding:3px 10px}
+    #hud-btn-row{gap:6px}
+    #hud-btn-row button{padding:6px 10px}
+    .btn-label{display:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <h1>FPV SIM</h1>
+  <p class="subtitle">PROTOTYPE v0.3 · open source · acro mode</p>
+
+  <div class="splash-panel">
+    <div class="splash-box">
+      <div class="box-title">LEFT STICK</div>
+      <div class="tbl">
+        <div class="row"><span>Throttle ↑↓</span><span class="val-col">SPACE / SHIFT</span></div>
+        <div class="row"><span>Yaw ←→</span><span class="val-col">Q / E</span></div>
+      </div>
+    </div>
+    <div class="splash-box">
+      <div class="box-title">RIGHT STICK</div>
+      <div class="tbl">
+        <div class="row"><span>Pitch ↑↓</span><span class="val-col">W / S</span></div>
+        <div class="row"><span>Roll ←→</span><span class="val-col">A / D</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="splash-panel" style="margin-bottom:8px">
+    <div class="splash-box">
+      <div class="box-title">CAMERA & VIEW</div>
+      <div class="tbl">
+        <div class="row"><span>Camera tilt</span><span class="val-col">↑ / ↓</span></div>
+        <div class="row"><span>Field of view FOV</span><span class="val-col">← / →</span></div>
+        <div class="row"><span>Controller config</span><span class="val-col">M · ⚙ button</span></div>
+        <div class="row"><span>Reset</span><span class="val-col">R</span></div>
+      </div>
+    </div>
+    <div class="splash-box" style="display:flex;align-items:center;justify-content:center;
+      border-color:rgba(255,109,0,.15);background:rgba(255,109,0,.03)">
+      <div style="text-align:center">
+        <div style="font-size:9px;color:#ff6d00;letter-spacing:2px;margin-bottom:8px">CONTROLLER</div>
+        <div style="font-size:10px;color:#8abfcc">Mode 2 by default</div>
+        <div style="font-size:9px;color:#6a9aaa;margin-top:4px">Auto-detected · configurable</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-g" id="btn-start">▶ FLY</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="tele">
+    <div>VEL <span id="spd">0.0</span> m/s</div>
+    <div>ALT <span id="alt">0.0</span> m</div>
+    <div>THR <span id="thrp">0</span>%</div>
+    <div>CAM <span id="tilt-deg">20</span>°</div>
+    <div>FOV <span id="fov-disp">85</span>°</div>
+  </div>
+  <div id="gps">🎮 <span id="gpname">NO CONTROLLER</span></div>
+  <canvas id="fpv-hud"></canvas>
+  <svg id="crosshair" width="40" height="40" viewBox="0 0 40 40">
+    <circle cx="20" cy="20" r="3" stroke="#00e5ff" fill="none" stroke-width="1" opacity=".7"/>
+    <line x1="20" y1="2"  x2="20" y2="13" stroke="#00e5ff" stroke-width="1" opacity=".35"/>
+    <line x1="20" y1="27" x2="20" y2="38" stroke="#00e5ff" stroke-width="1" opacity=".35"/>
+    <line x1="2"  y1="20" x2="13" y2="20" stroke="#00e5ff" stroke-width="1" opacity=".35"/>
+    <line x1="27" y1="20" x2="38" y2="20" stroke="#00e5ff" stroke-width="1" opacity=".35"/>
+  </svg>
+  <div id="thr-bar"><div id="thr-fill"></div></div>
+  <div id="gate-hud">GATE <span id="gnum">0</span> / <span id="gtot">0</span></div>
+  <div class="mode-badge" title="Click to switch flight mode">ACRO MODE</div>
+  <div id="help">SPACE/SHIFT Throttle · WS Pitch · AD Roll · QE Yaw · ↑↓ Cam tilt · ←→ FOV · M Config · R Reset</div>
+  <div id="hud-btn-row">
+    <button id="sound-btn" title="Mute/unmute engine sound">🔊</button>
+    <button id="fullscreen-btn" title="Toggle fullscreen">⤢</button>
+    <button id="map-btn">⚙ <span class="btn-label">SETTINGS</span></button>
+  </div>
+
+  <!-- Attitude Indicator -->
+  <div id="adi-wrap">
+    <canvas id="adi" width="82" height="82"></canvas>
+    <div id="adi-angles"><span id="adi-roll">R 0°</span> <span id="adi-pitch">P 0°</span></div>
+    <div id="adi-label">ATT</div>
+  </div>
+</div>
+
+<!-- Crash flash overlay -->
+<div id="crash-flash"></div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- MAPPING MODAL -->
+<div id="map-modal">
+<div id="map-card">
+  <div class="modal-header">
+    <h2>⚙ SETTINGS</h2>
+  </div>
+
+  <!-- Tabs -->
+  <div id="tabs">
+    <button class="tab active" data-tab="controller">CONTROLLER</button>
+    <button class="tab" data-tab="physics">PHYSICS</button>
+    <button class="tab" data-tab="world">GENERAL</button>
+  </div>
+
+  <!-- ── TAB: CONTROLLER ── -->
+  <div class="tab-panel active" id="tab-controller">
+  <div class="modal-body">
+
+    <!-- Mode 2 compact reference -->
+    <div class="sec-title" style="margin-top:4px">MODE 2 LAYOUT</div>
+    <div id="mode2-strip">
+      <div class="m2-cell left-stick">
+        <div class="m2-header">◉ LEFT STICK</div>
+        <div class="m2-line">↑↓ THROTTLE <span>(throttle)</span></div>
+        <div class="m2-line">←→ YAW <span>(yaw)</span></div>
+      </div>
+      <div class="m2-cell right-stick">
+        <div class="m2-header right">◉ RIGHT STICK</div>
+        <div class="m2-line">↑↓ PITCH <span>(pitch)</span></div>
+        <div class="m2-line">←→ ROLL <span>(roll)</span></div>
+      </div>
+    </div>
+
+    <div class="sec-title" style="margin-top:14px">QUICK SETUP</div>
+    <div id="wiz-row">
+      <button class="btn-g" id="wiz-btn">🔍 AUTO-DETECT ALL</button>
+      <span id="wiz-status"></span>
+    </div>
+    <p style="font-size:14px;color:#5a6b78;margin-bottom:8px;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+      ► Connect your controller and press the button. Move each stick to full deflection when prompted — the rest (axis, inversion) is detected automatically.
+    </p>
+    <div id="no-gp" style="display:none">⚠ Connect a controller first</div>
+
+    <div class="sec-title" style="margin-top:14px">CAMERA & VIEW<small style="font-weight:normal;text-transform:none;letter-spacing:0;color:#8b98a3;margin-left:6px">no keyboard needed — works on mobile</small></div>
+    <div class="phy-grid" style="margin-bottom:10px">
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Camera tilt<small>cockpit view angle</small></span>
+          <span class="phy-val" id="cfg-tilt-disp">20°</span>
+        </div>
+        <input type="range" class="phy-slider" id="cfg-tilt-slider" min="0" max="90" step="1" value="20">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Field of view<small>camera FOV</small></span>
+          <span class="phy-val" id="cfg-fov-disp">85°</span>
+        </div>
+        <input type="range" class="phy-slider" id="cfg-fov-slider" min="50" max="120" step="1" value="85">
+      </div>
+    </div>
+
+    <button class="adv-toggle" id="controller-adv-toggle" type="button">▸ MANUAL / ADVANCED SETTINGS</button>
+    <div class="adv-section" id="controller-adv-body">
+
+      <div class="sec-title" style="margin-top:14px">AXIS MONITOR — move the sticks to identify</div>
+      <div id="axes-grid"></div>
+
+      <div class="sec-title">CHANNEL ASSIGNMENT</div>
+      <div class="table-scroll">
+      <table id="ch-table">
+        <thead>
+          <tr>
+            <th style="width:190px">CHANNEL</th>
+            <th style="width:122px">PHYSICAL AXIS</th>
+            <th style="width:92px;text-align:center">INVERT</th>
+            <th>LIVE VALUE</th>
+            <th style="width:104px"></th>
+          </tr>
+        </thead>
+        <tbody id="ch-body"></tbody>
+      </table>
+      </div>
+
+      <div class="sec-title" style="margin-top:10px">DEADZONE (DEADBAND)</div>
+      <div id="db-row">
+        <label>Filter stick micro-movements</label>
+        <input type="range" id="db-slider" min="0" max="25" step="1" value="5">
+        <span id="db-disp">5%</span>
+      </div>
+
+    </div>
+
+  </div>
+  </div>
+
+  <!-- ── TAB: PHYSICS ── -->
+  <div class="tab-panel" id="tab-physics">
+  <div class="modal-body">
+
+    <div class="sec-title" style="margin-top:6px">PRESETS</div>
+    <div class="phy-presets">
+      <button class="preset-btn" data-preset="beginner">BEGINNER</button>
+      <button class="preset-btn active" data-preset="racing">RACING</button>
+      <button class="preset-btn" data-preset="freestyle">FREESTYLE</button>
+      <button class="preset-btn" data-preset="cinematic">CINEMATIC</button>
+    </div>
+    <div id="preset-desc">► The classic racing balance — agile but controllable.</div>
+
+    <button class="adv-toggle" id="physics-adv-toggle" type="button">▸ ADVANCED SETTINGS (sliders)</button>
+    <div class="adv-section" id="physics-adv-body">
+
+    <div class="sec-title">POWER & FLIGHT</div>
+    <div class="phy-grid">
+      <div class="phy-row phy-grid-full idle-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Idle (motors armed at 0%)<small>minimum thrust with throttle at zero</small></span>
+          <span class="phy-val" id="pv-idle">1%</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-idle" min="0" max="30" step="1" value="1">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Power (TWR)<small>engine power vs. weight — higher = more punch</small></span>
+          <span class="phy-val" id="pv-hover">×5.3</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-hover" min="10" max="60" step="1" value="19">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Hover stick %<small>where on the stick hover happens</small></span>
+          <span class="phy-val" id="pv-hoverstick">50%</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-hoverstick" min="30" max="70" step="1" value="50">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Linear drag<small>air resistance</small></span>
+          <span class="phy-val" id="pv-drag">0.14</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-drag" min="1" max="60" step="1" value="14">
+      </div>
+    </div>
+
+    <div class="sec-title">ANGULAR AGILITY</div>
+    <div class="phy-grid">
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Roll/pitch rates<small>max °/s</small></span>
+          <span class="phy-val" id="pv-rate">620°/s</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-rate" min="100" max="1200" step="10" value="620">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Yaw rate<small>max °/s</small></span>
+          <span class="phy-val" id="pv-yaw">400°/s</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-yaw" min="50" max="720" step="10" value="400">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Response (snap)<small>motor speed</small></span>
+          <span class="phy-val" id="pv-snap">41</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-snap" min="5" max="50" step="1" value="41">
+      </div>
+      <div class="phy-row">
+        <div class="phy-top">
+          <span class="phy-lbl">Angular drag<small>rotation braking</small></span>
+          <span class="phy-val" id="pv-adrag">0.90</span>
+        </div>
+        <input type="range" class="phy-slider" id="ph-adrag" min="70" max="100" step="1" value="90">
+      </div>
+    </div>
+
+    <div class="sec-title" style="margin-top:10px">CURRENT CONFIGURATION ANALYSIS</div>
+    <div id="analysis-panel">
+      <div class="ap-grid" id="ap-grid"></div>
+    </div>
+
+    </div>
+
+  </div>
+  </div>
+
+  <!-- ── TAB: GENERAL ── -->
+  <div class="tab-panel" id="tab-world">
+  <div class="modal-body">
+
+    <div class="sec-title" style="margin-top:6px">WORLD GENERATION</div>
+    <div id="world-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+        <input type="checkbox" class="inv-chk" id="randomize-toggle" checked>
+        Randomize world on every reset
+      </label>
+      <button class="btn-g" id="randomize-btn" style="display:none;font-size:13px;padding:8px 14px">🔀 RANDOMIZE NOW</button>
+    </div>
+    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+      ► When on, pressing R reshuffles gates and trees along with your position, like it always has. Turn it off to keep the same layout — pressing R will only reset your position, and you can reshuffle the layout manually with the button.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">FPV HUD OVERLAY</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+        <input type="checkbox" class="inv-chk" id="fpvhud-toggle" checked>
+        Show attitude HUD (pitch / roll)
+      </label>
+    </div>
+    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+      ► Draws a horizon bar across the centre of the view that tilts with roll and slides with pitch, flanked by two vertical gauges whose dots track the current pitch and roll angles. Turn it off for a clean, uncluttered FPV feed.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">COLLISIONS</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+        <input type="checkbox" class="inv-chk" id="collide-gates-toggle" checked>
+        Collide with gates
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+        <input type="checkbox" class="inv-chk" id="collide-trees-toggle" checked>
+        Collide with trees
+      </label>
+    </div>
+    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+      ► When enabled, touching a gate's frame/pole or a tree triggers a crash. Turn either off to fly straight through that obstacle type — handy for practicing lines without being punished for clipping scenery.
+    </p>
+
+  </div>
+  </div>
+
+  <div id="map-footer">
+    <div class="footer-left">
+      <span id="save-status">REAL-TIME CHANGES</span>
+      <span id="save-ts"></span>
+    </div>
+    <div class="footer-btns">
+      <button class="btn-g" id="reset-btn">↺ RESET</button>
+      <button class="btn-g" id="save-btn">💾 SAVE</button>
+      <button class="btn-g" id="close-btn">▶ FLY</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════
+//  MAPPING — persistent config
+// ═══════════════════════════════════════════════
+const CHANNELS = [
+  { key:'throttle', label:'THROTTLE',       desc:'Vertical thrust',    stick:'Left stick ↑↓', bipolar:false },
+  { key:'yaw',      label:'YAW',            desc:'Rotate on Z axis',   stick:'Left stick ←→', bipolar:true  },
+  { key:'roll',     label:'ROLL',           desc:'Tilt sideways',      stick:'Right stick ←→', bipolar:true  },
+  { key:'pitch',    label:'PITCH',          desc:'Tilt forward',       stick:'Right stick ↑↓', bipolar:true  },
+];
+
+const DEFAULT_MAP = {
+  throttle:{ axis:1, invert:true  },
+  yaw:     { axis:0, invert:false },
+  roll:    { axis:2, invert:false },
+  pitch:   { axis:3, invert:true  },
+  deadband: 0.05,
+};
+
+let axisMap = JSON.parse(JSON.stringify(DEFAULT_MAP));
+try{ const s=localStorage.getItem('fpv_map'); if(s) axisMap=JSON.parse(s); }catch(e){}
+function saveMap(){ try{ localStorage.setItem('fpv_map', JSON.stringify(axisMap)); }catch(e){} }
+
+// ═══════════════════════════════════════════════
+//  PHYSICS — mutable config + presets
+// ═══════════════════════════════════════════════
+const G=9.81, MASS=0.5;
+const GATE_R=2.5, N_GATES=12;
+let camTiltDeg = 20;
+let fovDeg = 85;
+
+const PHY_KEYS = ['hoverPct','rateDeg','yawDeg','omegaR','linDrag','angDrag','idleThrottle','hoverStick'];
+
+const PHY_PRESETS = {
+  // hoverPct: % throttle needed to hover → TWR = 1/hoverPct
+  // linDrag: air resistance (quads are small/fast, real drag is very low ~0.03-0.08)
+  // High linDrag = "underwater" feeling: kills all momentum
+  // hoverStick: % of stick travel where hover occurs (throttle curve, decoupled from TWR)
+  beginner:  { hoverPct:0.28, rateDeg:280,  yawDeg:140, omegaR:10, linDrag:0.10, angDrag:0.88, idleThrottle:0.12, hoverStick:0.5 },
+  racing:    { hoverPct:0.18, rateDeg:700,  yawDeg:350, omegaR:25, linDrag:0.04, angDrag:0.92, idleThrottle:0.07, hoverStick:0.5 },
+  freestyle: { hoverPct:0.22, rateDeg:550,  yawDeg:260, omegaR:20, linDrag:0.05, angDrag:0.91, idleThrottle:0.08, hoverStick:0.5 },
+  cinematic: { hoverPct:0.28, rateDeg:160,  yawDeg: 80, omegaR: 8, linDrag:0.08, angDrag:0.86, idleThrottle:0.14, hoverStick:0.5 },
+};
+
+// Default config (not a preset — matches none exactly, tuned for a punchy but controllable feel)
+const PHY_DEFAULT = { hoverPct:0.19, rateDeg:620, yawDeg:400, omegaR:41, linDrag:0.14, angDrag:0.90, idleThrottle:0.01, hoverStick:0.5 };
+
+// Load saved physics or fall back to the tuned default
+const phy = Object.assign({}, PHY_DEFAULT);
+let savedPhyLabel = 'default';
+(function loadPhy(){
+  try{
+    const s = localStorage.getItem('fpv_phy');
+    if(!s) return;
+    const saved = JSON.parse(s);
+    PHY_KEYS.forEach(k=>{ if(saved[k]!==undefined) phy[k]=saved[k]; });
+    savedPhyLabel = saved._label || 'custom';
+  }catch(e){}
+})();
+
+function savePhy(label){
+  try{
+    const toSave = {};
+    PHY_KEYS.forEach(k=>toSave[k]=phy[k]);
+    toSave._label = label || detectPresetName() || 'custom';
+    toSave._ts = Date.now();
+    localStorage.setItem('fpv_phy', JSON.stringify(toSave));
+    return toSave._ts;
+  }catch(e){ return null; }
+}
+
+function detectPresetName(){
+  for(const [name,p] of Object.entries(PHY_PRESETS)){
+    if(PHY_KEYS.every(k=>Math.abs((p[k]||0)-(phy[k]||0))<0.001)) return name;
+  }
+  return null;
+}
+
+function resetPhy(){
+  try{ localStorage.removeItem('fpv_phy'); }catch(e){}
+  Object.assign(phy, PHY_DEFAULT);
+  syncPhyUI();
+  const preset=detectPresetName();
+  if(preset) markPreset(preset);
+  else { document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active')); updatePresetDesc(null); }
+  showSaveToast('CONFIG RESET', '#ff6d00');
+}
+
+function maxThr(){ return MASS*G/phy.hoverPct; }
+function ratePit(){ return phy.rateDeg*Math.PI/180; }
+function rateRol(){ return phy.rateDeg*Math.PI/180; }
+function rateYaw(){ return phy.yawDeg*Math.PI/180; }
+function throttleP(){
+  const y0=clamp((phy.hoverPct-phy.idleThrottle)/(1-phy.idleThrottle),1e-4,1-1e-4);
+  return Math.log(y0)/Math.log(phy.hoverStick);
+}
+
+// ═══════════════════════════════════════════════
+//  THREE.JS
+// ═══════════════════════════════════════════════
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x5aa0cc);
+scene.fog=new THREE.FogExp2(0x5aa0cc,.005);
+
+const cam=new THREE.PerspectiveCamera(fovDeg,innerWidth/innerHeight,.05,1000);
+const Q_TILT=new THREE.Quaternion();
+const _TILT_AXIS=new THREE.Vector3(1,0,0);
+
+scene.add(new THREE.AmbientLight(0xffffff,.60));
+const sun=new THREE.DirectionalLight(0xfff5dd,1.15);
+sun.position.set(80,180,70); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=sun.shadow.camera.bottom=-150;
+sun.shadow.camera.right=sun.shadow.camera.top=150;
+sun.shadow.camera.far=600; scene.add(sun);
+
+// Ground
+const gnd=new THREE.Mesh(new THREE.PlaneGeometry(700,700),new THREE.MeshLambertMaterial({color:0x567a38}));
+gnd.rotation.x=-Math.PI/2; gnd.receiveShadow=true; scene.add(gnd);
+const grid=new THREE.GridHelper(500,100,0x3a5626,0x3a5626);
+grid.material.opacity=.3; grid.material.transparent=true; scene.add(grid);
+const rw=new THREE.Mesh(new THREE.PlaneGeometry(3,50),new THREE.MeshLambertMaterial({color:0x888888}));
+rw.rotation.x=-Math.PI/2; rw.position.y=.01; scene.add(rw);
+const sl=new THREE.Mesh(new THREE.BoxGeometry(3,.15,.15),new THREE.MeshLambertMaterial({color:0xffffff}));
+sl.position.y=.08; scene.add(sl);
+
+// Trees — kept clear of gates, but allowed close to the spawn/runway area
+const TREE_MIN_FROM_GATE=7, TREE_MIN_FROM_SPAWN=6, N_TREES=100, TREE_SIZE_MULT=1.3;
+const treeGroups=[];
+const treeColliders=[]; // {x,z,wScale,hScale} — mirrors treeGroups, used by checkTreeCrash
+const tG=new THREE.CylinderGeometry(.13,.2,2.6,5), tM=new THREE.MeshLambertMaterial({color:0x6b4226});
+const lG=new THREE.ConeGeometry(1.3,5,6), lM=new THREE.MeshLambertMaterial({color:0x2a6629});
+
+function buildTrees(){
+  treeGroups.forEach(g=>scene.remove(g)); treeGroups.length=0;
+  treeColliders.length=0;
+  let placed=0, attempts=0;
+  while(placed<N_TREES && attempts<4000){
+    attempts++;
+    const a=Math.random()*Math.PI*2, r=Math.random()*175;
+    const x=Math.cos(a)*r, z=Math.sin(a)*r;
+    if(Math.hypot(x,z)<TREE_MIN_FROM_SPAWN) continue;
+    let blocked=false;
+    for(const g of gates){ if(Math.hypot(x-g.pos.x,z-g.pos.z)<TREE_MIN_FROM_GATE){ blocked=true; break; } }
+    if(blocked) continue;
+    const g=new THREE.Group();
+    const tr=new THREE.Mesh(tG,tM); tr.position.y=1.3; tr.castShadow=true;
+    const lf=new THREE.Mesh(lG,lM); lf.position.y=5.0; lf.castShadow=true;
+    g.add(tr,lf);
+    const hScale=(0.6+Math.random()*1.1)*TREE_SIZE_MULT;   // height: wide variation
+    const wScale=(0.85+Math.random()*0.3)*TREE_SIZE_MULT;  // width: kept narrow so trunks don't look absurd
+    g.scale.set(wScale,hScale,wScale);
+    g.position.set(x,0,z); scene.add(g);
+    treeGroups.push(g);
+    treeColliders.push({x,z,wScale,hScale});
+    placed++;
+  }
+}
+
+// Circuit — square MultiGP-style racing gates
+const gates=[];
+const MAT_POST=new THREE.MeshLambertMaterial({color:0xcccccc});
+const T_FRAME=0.48;                     // bar cross-section (thick frame border)
+const BAR_LEN=2*GATE_R+T_FRAME;
+const GEO_BAR_H=new THREE.BoxGeometry(BAR_LEN,T_FRAME,T_FRAME); // top/bottom bars
+const GEO_BAR_V=new THREE.BoxGeometry(T_FRAME,BAR_LEN,T_FRAME); // left/right bars
+const POST_R=0.09;
+
+function numSprite(n){
+  const cv=document.createElement('canvas'); cv.width=cv.height=64;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='rgba(0,0,0,0)'; ctx.fillRect(0,0,64,64);
+  ctx.fillStyle='#fff'; ctx.font='bold 38px Arial';
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(n,32,32);
+  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
+  s.scale.set(1.2,1.2,1); return s;
+}
+
+function buildCircuit(){
+  gates.forEach(g=>scene.remove(g.group)); gates.length=0;
+  let angle=0;
+  for(let i=0;i<N_GATES;i++){
+    angle+=(Math.PI*2/N_GATES)*(0.7+Math.random()*0.6);
+    const r=18+Math.random()*26;
+    const px=Math.cos(angle)*r+(Math.random()-.5)*10;
+    const pz=Math.sin(angle)*r+(Math.random()-.5)*10;
+    const py=3+Math.random()*8;
+    const ry=angle+Math.PI/2+(Math.random()-.5)*0.45;
+    const group=new THREE.Group();
+    const mat=new THREE.MeshLambertMaterial({color:i===0?0xffff00:0xff5000});
+    const top=new THREE.Mesh(GEO_BAR_H,mat); top.position.set(0, GATE_R,0);
+    const bot=new THREE.Mesh(GEO_BAR_H,mat); bot.position.set(0,-GATE_R,0);
+    const lft=new THREE.Mesh(GEO_BAR_V,mat); lft.position.set(-GATE_R,0,0);
+    const rgt=new THREE.Mesh(GEO_BAR_V,mat); rgt.position.set( GATE_R,0,0);
+    [top,bot,lft,rgt].forEach(m=>{ m.castShadow=true; group.add(m); });
+    const poleLen=py-GATE_R;
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(POST_R,POST_R,poleLen,6),MAT_POST);
+    pole.position.set(0,-GATE_R-poleLen/2,0); pole.castShadow=true; group.add(pole);
+    const ns=numSprite(i+1); ns.position.set(0,GATE_R+T_FRAME/2+0.55,0); group.add(ns);
+    group.position.set(px,py,pz); group.rotation.y=ry; scene.add(group);
+    gates.push({group,mat,pos:new THREE.Vector3(px,py,pz)});
+  }
+  document.getElementById('gtot').textContent=N_GATES;
+  document.getElementById('gnum').textContent='0';
+  buildTrees();
+}
+buildCircuit();
+
+// ═══════════════════════════════════════════════
+//  DRONE STATE
+// ═══════════════════════════════════════════════
+const drone={
+  pos:new THREE.Vector3(0,1.5,0),
+  vel:new THREE.Vector3(),
+  quat:new THREE.Quaternion(),
+  omega:new THREE.Vector3(),
+  thr:0, // current effective thrust (with motor spool-up delay)
+};
+let nextGate=0, gatesPassed=0;
+let crashState=null; // {t, cause} while the drone is crashed/falling after a collision
+const CRASH_RESPAWN_T=1.8;
+
+let collideGates=true;
+try{ const s=localStorage.getItem('fpv_collide_gates'); if(s!==null) collideGates=s==='1'; }catch(e){}
+let collideTrees=true;
+try{ const s=localStorage.getItem('fpv_collide_trees'); if(s!==null) collideTrees=s==='1'; }catch(e){}
+
+function resetDrone(){
+  drone.pos.set(0,1.5,0); drone.vel.set(0,0,0);
+  drone.quat.identity(); drone.omega.set(0,0,0);
+  drone.thr=phy.idleThrottle;
+  crashState=null;
+  inp.throttle=0; nextGate=0; gatesPassed=0;
+  gates.forEach((g,i)=>g.mat.color.set(i===0?0xffff00:0xff5000));
+  document.getElementById('gnum').textContent='0';
+}
+
+function flashCrash(){
+  const el=document.getElementById('crash-flash');
+  if(!el) return;
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),120);
+}
+
+function triggerCrash(cause){
+  if(crashState) return;
+  crashState={t:0, cause};
+  drone.omega.set((Math.random()-.5)*16,(Math.random()-.5)*16,(Math.random()-.5)*16);
+  const causeMsg = cause==='gate' ? '💥 GATE COLLISION' : cause==='tree' ? '💥 TREE COLLISION' : '💥 GROUND IMPACT';
+  showSaveToast(causeMsg, '#ff3535');
+  flashCrash();
+  playCrashThud();
+}
+
+// ═══════════════════════════════════════════════
+//  WORLD GENERATION — randomize-on-reset toggle
+// ═══════════════════════════════════════════════
+let randomizeOnReset=true;
+try{ const s=localStorage.getItem('fpv_world_randomize'); if(s!==null) randomizeOnReset=s==='1'; }catch(e){}
+
+// ═══════════════════════════════════════════════
+//  INPUT
+// ═══════════════════════════════════════════════
+const keys={};
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(['Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if(e.code==='KeyR'){ resetDrone(); if(randomizeOnReset) buildCircuit(); }
+  if(e.code==='KeyM') toggleMapping();
+});
+document.addEventListener('keyup',e=>{ keys[e.code]=false; });
+
+const inp={throttle:0,roll:0,pitch:0,yaw:0};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+function applyDeadband(v,d){
+  if(Math.abs(v)<d) return 0;
+  return (v-Math.sign(v)*d)/(1-d);
+}
+
+function readAxisValue(axes, cfg, bipolar){
+  if(cfg.axis<0||cfg.axis>=axes.length) return 0;
+  let v=axes[cfg.axis];
+  if(cfg.invert) v=-v;
+  if(bipolar){
+    return clamp(applyDeadband(v, axisMap.deadband),-1,1);
+  } else {
+    v=(v+1)/2;
+    const d2=axisMap.deadband/2;
+    if(v<d2) return 0;
+    return clamp((v-d2)/(1-d2),0,1);
+  }
+}
+
+function readInput(dt){
+  // Keyboard — cumulative throttle
+  if(keys['Space'])    inp.throttle=Math.min(inp.throttle+dt*1.2,1);
+  if(keys['ShiftLeft']||keys['ShiftRight']) inp.throttle=Math.max(inp.throttle-dt*1.2,0);
+
+  // Roll and Pitch — letter keys only (← → freed for FOV)
+  inp.roll =clamp((keys['KeyD']?1:0)-(keys['KeyA']?1:0),-1,1);
+  inp.pitch=clamp((keys['KeyW']?1:0)-(keys['KeyS']?1:0),-1,1);
+  inp.yaw  =clamp((keys['KeyE']?1:0)-(keys['KeyQ']?1:0),-1,1);
+
+  // Camera tilt (↑ ↓)
+  if(keys['ArrowUp'])   camTiltDeg=Math.min(camTiltDeg+dt*30, 90);
+  if(keys['ArrowDown']) camTiltDeg=Math.max(camTiltDeg-dt*30,  0);
+
+  // FOV (← →) range 50–120°
+  if(keys['ArrowLeft'])  { fovDeg=Math.max(fovDeg-dt*28, 50); cam.fov=fovDeg; cam.updateProjectionMatrix(); }
+  if(keys['ArrowRight']) { fovDeg=Math.min(fovDeg+dt*28,120); cam.fov=fovDeg; cam.updateProjectionMatrix(); }
+
+  // Controller (overrides keyboard when connected)
+  for(const gp of navigator.getGamepads()){
+    if(!gp) continue;
+    document.getElementById('gpname').textContent=gp.id.slice(0,26);
+    const ax=gp.axes;
+    inp.throttle=readAxisValue(ax, axisMap.throttle, false);
+    inp.yaw     =readAxisValue(ax, axisMap.yaw,      true);
+    inp.roll    =readAxisValue(ax, axisMap.roll,      true);
+    inp.pitch   =readAxisValue(ax, axisMap.pitch,     true);
+    break;
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  PHYSICS (Acro)
+//  — idle throttle: armed motors generate minimum
+//    thrust even at 0% throttle
+// ═══════════════════════════════════════════════
+const _up=new THREE.Vector3(),_frc=new THREE.Vector3(),_dq=new THREE.Quaternion();
+
+// Balanced-mode scratch objects (module-level, reused every frame — avoids per-frame allocation)
+const _AXIS_X=new THREE.Vector3(1,0,0), _AXIS_Y=new THREE.Vector3(0,1,0), _AXIS_Z=new THREE.Vector3(0,0,1);
+const _qYaw=new THREE.Quaternion(), _qPitch=new THREE.Quaternion(), _qRoll=new THREE.Quaternion();
+const _qTarget=new THREE.Quaternion(), _qErr=new THREE.Quaternion();
+const _fwdXZ=new THREE.Vector3();
+
+// Realism constants that don't depend on sliders (to avoid complicating the UI)
+const MOTOR_SPOOL_T=0.10;     // s — motor spool-up/down time (ESC + propeller inertia)
+const YAW_SNAP_FACTOR=0.55;   // yaw accelerates slower than roll/pitch (weaker reaction torque)
+const QUAD_DRAG_RATIO=0.15;   // portion of drag proportional to v² (in addition to linear)
+const GROUND_EFFECT_ALT=0.6, GROUND_EFFECT_BOOST=0.22; // air cushion near the ground
+const HARD_IMPACT_VY=8.5;     // m/s of vertical impact velocity that triggers a crash
+const DRONE_R=0.15;           // approximate drone radius for collisions
+const ANGLE_MAX=45*Math.PI/180;  // Balanced mode: max commanded bank/pitch angle
+const ANGLE_P_GAIN=8;            // Balanced mode: rad/s commanded per rad of angle error
+
+// flightMode: 'acro' (rate control, no self-level) or 'balanced' (self-leveling, angle control)
+let flightMode='acro';
+try{ const m=localStorage.getItem('fpv_flight_mode'); if(m==='balanced') flightMode='balanced'; }catch(e){}
+
+// Balanced mode: builds a target attitude (current heading + targetPitch/targetRoll) and returns the
+// body-frame rotation (x,z components) needed to get there, via a quaternion attitude error — NOT two
+// independent scalar angle readings, which would cross-couple roll and pitch whenever both are nonzero.
+function balancedError(targetPitch, targetRoll){
+  // Heading of the drone: the yaw that maps the reference forward (0,0,-1) onto the current
+  // forward. Rotating (0,0,-1) about +Y by yaw gives (-sin yaw, 0, -cos yaw), so the heading is
+  // atan2(-fwd.x, -fwd.z) — with the sign flipped the target frame ends up mirrored about the
+  // world axes and roll/pitch cross-couple with heading (at 45° of yaw, pitch commands roll).
+  _fwdXZ.set(0,0,-1).applyQuaternion(drone.quat);
+  let yaw;
+  if(_fwdXZ.x*_fwdXZ.x+_fwdXZ.z*_fwdXZ.z > 1e-6){
+    yaw=Math.atan2(-_fwdXZ.x,-_fwdXZ.z);
+  } else {
+    // Nose straight up/down: forward has no horizontal component, so take the heading from the
+    // body right axis instead — rotating (1,0,0) about +Y by yaw gives (cos yaw, 0, -sin yaw).
+    _fwdXZ.set(1,0,0).applyQuaternion(drone.quat);
+    yaw=Math.atan2(-_fwdXZ.z,_fwdXZ.x);
+  }
+  _qYaw.setFromAxisAngle(_AXIS_Y, yaw);
+  _qPitch.setFromAxisAngle(_AXIS_X, targetPitch);
+  _qRoll.setFromAxisAngle(_AXIS_Z, targetRoll);
+  _qTarget.copy(_qYaw).multiply(_qPitch).multiply(_qRoll);
+
+  // Body-frame rotation current->target (conjugate is the inverse for a unit quaternion)
+  _qErr.set(-drone.quat.x,-drone.quat.y,-drone.quat.z,drone.quat.w).multiply(_qTarget);
+  if(_qErr.w<0){ _qErr.x=-_qErr.x; _qErr.y=-_qErr.y; _qErr.z=-_qErr.z; _qErr.w=-_qErr.w; } // shortest path
+  const angle=2*Math.acos(clamp(_qErr.w,-1,1));
+  const s=Math.sqrt(Math.max(0,1-_qErr.w*_qErr.w));
+  return s>1e-6 ? { x:(_qErr.x/s)*angle, z:(_qErr.z/s)*angle } : { x:0, z:0 };
+}
+
+function physics(dt){
+  dt=Math.min(dt,.032);
+  _up.set(0,1,0).applyQuaternion(drone.quat);
+
+  // Effective thrust: minimum idle + remaining range controlled by the pilot,
+  // shaped by a non-linear curve so hover sits at hoverStick regardless of TWR.
+  // Armed motors never drop below idle in normal flight, but cut out on a crash.
+  // Actual thrust takes a moment to reach the target (motor spool-up/down).
+  const targetThr = crashState ? 0 : phy.idleThrottle + (1-phy.idleThrottle)*Math.pow(inp.throttle,throttleP());
+  drone.thr += (targetThr-drone.thr)*clamp(dt/MOTOR_SPOOL_T,0,1);
+
+  // Ground effect: near the ground, recirculated air adds extra thrust
+  const alt=drone.pos.y-.12;
+  const groundEffect = alt<GROUND_EFFECT_ALT ? 1+GROUND_EFFECT_BOOST*(1-alt/GROUND_EFFECT_ALT) : 1;
+
+  _frc.copy(_up).multiplyScalar(drone.thr*maxThr()*groundEffect);
+  _frc.y-=G*MASS;
+  _frc.addScaledVector(drone.vel,-phy.linDrag*MASS);
+  const spd=drone.vel.length();
+  if(spd>0.01) _frc.addScaledVector(drone.vel,-phy.linDrag*QUAD_DRAG_RATIO*MASS*spd);
+  drone.vel.addScaledVector(_frc.divideScalar(MASS),dt);
+  drone.pos.addScaledVector(drone.vel,dt);
+
+  if(drone.pos.y<.12){
+    if(!crashState && drone.vel.y<-HARD_IMPACT_VY) triggerCrash('ground');
+    drone.pos.y=.12;
+    if(drone.vel.y<0) drone.vel.y*=-.04;
+    drone.vel.x*=.88; drone.vel.z*=.88;
+  }
+
+  let tx,tz;
+  if(crashState){
+    tx=0; tz=0;
+  } else if(flightMode==='balanced'){
+    // Angle mode: stick commands a target bank/pitch angle; self-levels back to 0 when centered.
+    const targetPitch=-inp.pitch*ANGLE_MAX;
+    const targetRoll =-inp.roll*ANGLE_MAX;
+    const err=balancedError(targetPitch, targetRoll);
+    tx=clamp(ANGLE_P_GAIN*err.x, -ratePit(), ratePit());
+    tz=clamp(ANGLE_P_GAIN*err.z, -rateRol(), rateRol());
+  } else {
+    tx=-inp.pitch*ratePit();
+    tz=-inp.roll*rateRol();
+  }
+  const ty=crashState?0:-inp.yaw*rateYaw();
+  const t=clamp(phy.omegaR*dt,0,1);
+  const tY=clamp(phy.omegaR*YAW_SNAP_FACTOR*dt,0,1);
+  drone.omega.x+=(tx-drone.omega.x)*t;
+  drone.omega.y+=(ty-drone.omega.y)*tY;
+  drone.omega.z+=(tz-drone.omega.z)*t;
+  drone.omega.multiplyScalar(Math.pow(phy.angDrag,dt));
+  const len=drone.omega.length();
+  if(len>1e-5){ _dq.setFromAxisAngle(drone.omega.clone().normalize(),len*dt); drone.quat.multiply(_dq).normalize(); }
+
+  if(!crashState){ checkGateCrash(); checkTreeCrash(); }
+}
+
+// ═══════════════════════════════════════════════
+//  GATE COLLISION (crash if you touch the frame bars or pole,
+//  instead of passing through the center opening)
+// ═══════════════════════════════════════════════
+function gateLocal(g,pos){
+  const dx=pos.x-g.pos.x, dz=pos.z-g.pos.z;
+  const ry=g.group.rotation.y, cs=Math.cos(ry), sn=Math.sin(ry);
+  return { lx:dx*cs-dz*sn, ly:pos.y-g.pos.y, lz:dx*sn+dz*cs };
+}
+
+function distToBox(px,py,pz,hx,hy,hz){
+  const dx=Math.max(Math.abs(px)-hx,0), dy=Math.max(Math.abs(py)-hy,0), dz=Math.max(Math.abs(pz)-hz,0);
+  return Math.hypot(dx,dy,dz);
+}
+
+function checkGateCrash(){
+  if(!collideGates) return;
+  const halfT=T_FRAME/2, halfLen=BAR_LEN/2;
+  for(const g of gates){
+    const L=gateLocal(g,drone.pos);
+    // Frame bars (top/bottom/left/right)
+    if(distToBox(L.lx, L.ly-GATE_R, L.lz, halfLen,halfT,halfT)<DRONE_R){ triggerCrash('gate'); return; }
+    if(distToBox(L.lx, L.ly+GATE_R, L.lz, halfLen,halfT,halfT)<DRONE_R){ triggerCrash('gate'); return; }
+    if(distToBox(L.lx+GATE_R, L.ly, L.lz, halfT,halfLen,halfT)<DRONE_R){ triggerCrash('gate'); return; }
+    if(distToBox(L.lx-GATE_R, L.ly, L.lz, halfT,halfLen,halfT)<DRONE_R){ triggerCrash('gate'); return; }
+    // Support pole
+    const poleLen=g.pos.y-GATE_R, poleHalf=poleLen/2, poleCy=-GATE_R-poleHalf;
+    const radial=Math.hypot(L.lx,L.lz);
+    const dy=Math.max(Math.abs(L.ly-poleCy)-poleHalf,0);
+    if(Math.hypot(Math.max(radial-POST_R,0),dy)<DRONE_R){ triggerCrash('gate'); return; }
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  TREE COLLISION (trunk + foliage treated as two
+//  stacked vertical cylinders, same distance-check
+//  style as the gate frame/pole above)
+// ═══════════════════════════════════════════════
+const TREE_TRUNK_R=0.2, TREE_FOLIAGE_R=1.3; // base radii before per-tree wScale
+
+function distToVCyl(px,py,pz,r,yMin,yMax){
+  const radial=Math.hypot(px,pz);
+  const dy=py<yMin ? yMin-py : (py>yMax ? py-yMax : 0);
+  return Math.hypot(Math.max(radial-r,0), dy);
+}
+
+function checkTreeCrash(){
+  if(!collideTrees) return;
+  for(const t of treeColliders){
+    const dx=drone.pos.x-t.x, dz=drone.pos.z-t.z;
+    if(dx*dx+dz*dz>9) continue; // cheap reject — max collision radius is well under 3m
+    const trunkR=TREE_TRUNK_R*t.wScale, foliageR=TREE_FOLIAGE_R*t.wScale;
+    if(distToVCyl(dx,drone.pos.y,dz, trunkR, 0, 2.6*t.hScale)<DRONE_R){ triggerCrash('tree'); return; }
+    if(distToVCyl(dx,drone.pos.y,dz, foliageR, 2.5*t.hScale, 7.5*t.hScale)<DRONE_R){ triggerCrash('tree'); return; }
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  GATES
+// ═══════════════════════════════════════════════
+function checkGates(){
+  if(!gates.length || crashState) return;
+  const g=gates[nextGate%gates.length];
+  const L=gateLocal(g,drone.pos);
+  const innerHalf=GATE_R-T_FRAME/2;
+  if(Math.abs(L.lx)<innerHalf && Math.abs(L.ly)<innerHalf && Math.abs(L.lz)<1.0){
+    g.mat.color.set(0x00cc44);
+    gatesPassed++; nextGate++;
+    document.getElementById('gnum').textContent=gatesPassed;
+    gates[nextGate%gates.length].mat.color.set(0xffff00);
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+//  ATTITUDE INDICATOR (ADI)
+// ═══════════════════════════════════════════════
+const adiCanvas = document.getElementById('adi');
+const adiCtx    = adiCanvas.getContext('2d');
+const ADI_CX=41, ADI_CY=41, ADI_R=38;
+
+// Reusable vectors for angle extraction
+const _adiUp    = new THREE.Vector3();
+const _adiFwd   = new THREE.Vector3();
+const _adiRight = new THREE.Vector3();
+
+function drawADI(rollRad, pitchRad){
+  const ctx=adiCtx;
+  const cx=ADI_CX, cy=ADI_CY, r=ADI_R;
+  ctx.clearRect(0,0,82,82);
+
+  ctx.save();
+  // Circular clip
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.clip();
+
+  // ── Rotate canvas by roll, shift by pitch ──
+  // The instrument face is fixed to the airframe, so the horizon backdrop turns opposite
+  // the bank: a right bank leaves the sky on the pilot's left.
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(-rollRad);
+
+  const pitchPx = pitchRad * (r / (Math.PI*0.5)); // 38px per 90°
+
+  // Sky
+  const skyGrad=ctx.createLinearGradient(0,-r+pitchPx,0,pitchPx);
+  skyGrad.addColorStop(0,'#0d3a5c');
+  skyGrad.addColorStop(1,'#1a6a9a');
+  ctx.fillStyle=skyGrad;
+  ctx.fillRect(-r,-r*2+pitchPx,r*2,r*2);
+
+  // Ground
+  const gndGrad=ctx.createLinearGradient(0,pitchPx,0,r*2+pitchPx);
+  gndGrad.addColorStop(0,'#6b3c14');
+  gndGrad.addColorStop(1,'#3a1f08');
+  ctx.fillStyle=gndGrad;
+  ctx.fillRect(-r,pitchPx,r*2,r*2);
+
+  // Horizon line
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(-r,pitchPx); ctx.lineTo(r,pitchPx); ctx.stroke();
+
+  // Pitch ladder: small ticks every 10°
+  ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1;
+  ctx.font='8px Courier New'; ctx.fillStyle='rgba(255,255,255,.55)'; ctx.textAlign='center';
+  for(let deg=-60; deg<=60; deg+=10){
+    if(deg===0) continue;
+    const py=pitchPx - deg*(r/(90));
+    if(Math.abs(py)>r) continue;
+    const w=(Math.abs(deg)%30===0)?14:9;
+    ctx.beginPath(); ctx.moveTo(-w,py); ctx.lineTo(w,py); ctx.stroke();
+    if(Math.abs(deg)%30===0) ctx.fillText(Math.abs(deg),w+8,py+3);
+  }
+
+  ctx.restore(); // undo roll+pitch
+
+  // ── Fixed aircraft reference (always horizontal) ──
+  ctx.strokeStyle='#00e5ff'; ctx.lineWidth=2;
+  // Left wing
+  ctx.beginPath(); ctx.moveTo(cx-r+6,cy); ctx.lineTo(cx-10,cy);
+  ctx.lineTo(cx-10,cy+5); ctx.stroke();
+  // Right wing
+  ctx.beginPath(); ctx.moveTo(cx+r-6,cy); ctx.lineTo(cx+10,cy);
+  ctx.lineTo(cx+10,cy+5); ctx.stroke();
+  // Center dot
+  ctx.beginPath(); ctx.arc(cx,cy,2.5,0,Math.PI*2);
+  ctx.fillStyle='#00e5ff'; ctx.fill();
+
+  ctx.restore(); // undo clip
+
+  // ── Outer bezel ──
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.strokeStyle='rgba(0,229,255,.35)'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // ── Roll scale marks on bezel ──
+  const marks=[{a:-90,l:7},{a:-60,l:5},{a:-45,l:5},{a:-30,l:5},
+               {a: 30,l:5},{a: 45,l:5},{a: 60,l:5},{a: 90,l:7}];
+  ctx.strokeStyle='rgba(0,229,255,.5)'; ctx.lineWidth=1;
+  for(const m of marks){
+    const rad=(m.a-90)*Math.PI/180;
+    const x1=cx+Math.cos(rad)*r, y1=cy+Math.sin(rad)*r;
+    const x2=cx+Math.cos(rad)*(r-m.l), y2=cy+Math.sin(rad)*(r-m.l);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+
+  // ── Roll pointer triangle (moves with roll) ──
+  ctx.save();
+  ctx.translate(cx,cy); ctx.rotate(-rollRad);
+  ctx.beginPath();
+  ctx.moveTo(0,-(r-2));
+  ctx.lineTo(-4,-(r-10));
+  ctx.lineTo( 4,-(r-10));
+  ctx.closePath();
+  ctx.fillStyle='#00e5ff'; ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+//  FPV ATTITUDE OVERLAY — a horizon bar across the
+//  centre of the view that tilts with roll and slides
+//  with pitch, plus two vertical gauges (left = pitch,
+//  right = roll) with a dot sliding along each.
+// ═══════════════════════════════════════════════
+const fpvCanvas=document.getElementById('fpv-hud');
+const fpvCtx=fpvCanvas.getContext('2d');
+const HUD_C='rgba(255,255,255,';
+
+let fpvHudOn=true;
+try{ const s=localStorage.getItem('fpv_hud_overlay'); if(s!==null) fpvHudOn=s==='1'; }catch(e){}
+
+function resizeFpvHud(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  fpvCanvas.width =Math.round(innerWidth *dpr);
+  fpvCanvas.height=Math.round(innerHeight*dpr);
+  fpvCanvas.style.width =innerWidth +'px';
+  fpvCanvas.style.height=innerHeight+'px';
+  fpvCtx.setTransform(dpr,0,0,dpr,0,0);   // draw in CSS pixels
+}
+resizeFpvHud();
+
+// One vertical gauge: rail + ticks + a dot at `val`, clamped to ±range degrees.
+function drawFpvRail(x,cy,halfH,label,val,range){
+  const ctx=fpvCtx;
+  ctx.lineWidth=1;
+  ctx.strokeStyle=HUD_C+'.25)';
+  ctx.beginPath(); ctx.moveTo(x,cy-halfH); ctx.lineTo(x,cy+halfH); ctx.stroke();
+
+  for(let i=-3;i<=3;i++){
+    const ty=cy-(i/3)*halfH, w=i===0?7:4;
+    ctx.strokeStyle=HUD_C+(i===0?'.5)':'.22)');
+    ctx.beginPath(); ctx.moveTo(x-w,ty); ctx.lineTo(x+w,ty); ctx.stroke();
+  }
+
+  const dy=cy-(clamp(val,-range,range)/range)*halfH;
+  ctx.beginPath(); ctx.arc(x,dy,4,0,Math.PI*2);
+  ctx.fillStyle=HUD_C+'.95)';
+  ctx.shadowColor=HUD_C+'.8)'; ctx.shadowBlur=8; ctx.fill(); ctx.shadowBlur=0;
+
+  ctx.textAlign='center';
+  ctx.fillStyle=HUD_C+'.9)';
+  ctx.fillText((val>0?'+':'')+Math.round(val)+'°', x, dy-15);
+  ctx.fillStyle=HUD_C+'.4)';
+  ctx.fillText(label, x, cy+halfH+15);
+}
+
+function drawFpvHud(rollRad,pitchRad){
+  const ctx=fpvCtx, W=innerWidth, H=innerHeight;
+  ctx.clearRect(0,0,W,H);
+  if(!fpvHudOn) return;
+
+  const cx=W/2, cy=H/2;
+  const half   =Math.min(W*.20,240);   // half-length of the horizon bar
+  const railX  =Math.min(W*.30,300);   // gauge distance from centre
+  const railH  =Math.min(H*.30,220);   // gauge half-height
+
+  // Bar position reflects the drone's own body pitch only — NOT the camera tilt. The FPV
+  // camera is tilted up independently (to compensate for nose-down forward flight), so it
+  // deliberately disagrees with the drone's attitude; this bar is a flight instrument that
+  // must keep showing true drone attitude regardless of where the camera happens to point.
+  const camAng=clamp(pitchRad, -1.5, 1.5);
+  const horizonY=Math.tan(camAng)*(H/2)/Math.tan(fovDeg*Math.PI/360);
+
+  ctx.lineCap='round';
+  ctx.textBaseline='middle';
+  ctx.font='11px "Courier New",monospace';
+
+  // ── Horizon bar: banking right tilts the world the other way on screen ──
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(-rollRad);
+  ctx.translate(0, clamp(horizonY,-railH,railH));
+  ctx.strokeStyle=HUD_C+'.85)'; ctx.lineWidth=2;
+  ctx.shadowColor=HUD_C+'.6)'; ctx.shadowBlur=6;
+  const gap=26;
+  ctx.beginPath();
+  ctx.moveTo(-half,0); ctx.lineTo(-gap,0); ctx.lineTo(-gap,9);
+  ctx.moveTo( half,0); ctx.lineTo( gap,0); ctx.lineTo( gap,9);
+  ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.restore();
+
+  // ── Vertical gauges ──
+  drawFpvRail(cx-railX, cy, railH, 'PITCH', pitchRad*180/Math.PI,  90);
+  drawFpvRail(cx+railX, cy, railH, 'ROLL',  rollRad *180/Math.PI, 180);
+}
+
+// ═══════════════════════════════════════════════
+//  HUD
+// ═══════════════════════════════════════════════
+function updateHUD(){
+  document.getElementById('spd').textContent=drone.vel.length().toFixed(1);
+  document.getElementById('alt').textContent=Math.max(0,drone.pos.y-.12).toFixed(1);
+  document.getElementById('thrp').textContent=Math.round(inp.throttle*100);
+  document.getElementById('tilt-deg').textContent=Math.round(camTiltDeg);
+  document.getElementById('fov-disp').textContent=Math.round(fovDeg);
+  document.getElementById('thr-fill').style.height=(inp.throttle*100)+'%';
+
+  // Extract roll and pitch from drone quaternion. Roll is the bank about the drone's own
+  // forward axis, so it comes from the body up/right vectors — reading world X off the up
+  // vector alone would only be right while flying due north.
+  _adiUp.set(0,1,0).applyQuaternion(drone.quat);
+  _adiFwd.set(0,0,-1).applyQuaternion(drone.quat);
+  _adiRight.set(1,0,0).applyQuaternion(drone.quat);
+  const rollRad  = Math.atan2(-_adiRight.y, _adiUp.y);      // + = right bank
+  const pitchRad = Math.asin(Math.max(-1,Math.min(1,_adiFwd.y))); // + = nose up
+  drawADI(rollRad, pitchRad);
+  drawFpvHud(rollRad, pitchRad);
+  const rollDeg=Math.round(rollRad*180/Math.PI);
+  const pitchDeg=Math.round(pitchRad*180/Math.PI);
+  document.getElementById('adi-roll').textContent ='R '+(rollDeg>0?'+':'')+rollDeg+'°';
+  document.getElementById('adi-pitch').textContent='P '+(pitchDeg>0?'+':'')+pitchDeg+'°';
+}
+
+// ═══════════════════════════════════════════════
+//  MAPPING UI
+// ═══════════════════════════════════════════════
+let mappingOpen=false;
+let detectState=null;
+let wizQueue=null;
+
+function getGamepad(){ for(const g of navigator.getGamepads()) if(g) return g; return null; }
+function toggleMapping(){ mappingOpen?closeMapping():openMapping(); }
+
+function openMapping(){
+  mappingOpen=true;
+  document.getElementById('map-modal').classList.add('open');
+  refreshMappingUI();
+}
+
+function closeMapping(){
+  mappingOpen=false; detectState=null; wizQueue=null;
+  document.getElementById('map-modal').classList.remove('open');
+  document.getElementById('wiz-status').textContent='';
+  document.querySelectorAll('.det-btn').forEach(b=>{b.textContent='DETECT';b.classList.remove('active','ok');});
+  document.getElementById('wiz-btn').disabled=false;
+  saveMap();
+}
+
+// ── Axes monitor ─────────────────────────────
+function axisChannelLabel(idx){
+  for(const ch of CHANNELS){
+    if(axisMap[ch.key].axis===idx){
+      const short={throttle:'THROTTLE',yaw:'YAW',roll:'ROLL',pitch:'PITCH'};
+      return short[ch.key]||ch.key;
+    }
+  }
+  return '';
+}
+
+function buildAxesGrid(numAxes){
+  const grid=document.getElementById('axes-grid');
+  while(grid.children.length>numAxes) grid.removeChild(grid.lastChild);
+  for(let i=grid.children.length;i<numAxes;i++){
+    const row=document.createElement('div');
+    row.className='ax-row'; row.dataset.i=i;
+    row.innerHTML=`<span class="ax-lbl">AXIS ${i}</span>
+      <div class="bw"><div class="bc"></div><div class="bv" id="ab${i}"></div></div>
+      <span class="ax-num" id="an${i}">0.00</span>
+      <span class="ax-badge" id="albl${i}"></span>`;
+    grid.appendChild(row);
+  }
+  for(let i=0;i<numAxes;i++){
+    const badge=document.getElementById('albl'+i);
+    if(!badge) continue;
+    const lbl=axisChannelLabel(i);
+    badge.textContent=lbl;
+    badge.classList.toggle('vis', lbl!=='');
+  }
+}
+
+// ── Channel table ─────────────────────────────
+function buildChannelTable(numAxes){
+  const tbody=document.getElementById('ch-body');
+  tbody.innerHTML='';
+  for(const ch of CHANNELS){
+    const cfg=axisMap[ch.key];
+    const isLeft=(ch.key==='throttle'||ch.key==='yaw');
+    let opts='';
+    for(let i=0;i<numAxes;i++) opts+=`<option value="${i}"${cfg.axis===i?' selected':''}>AXIS ${i}</option>`;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>
+        <div class="ch-info">
+          <span class="ch-name">${ch.label}</span>
+          <span class="ch-sub">${ch.desc}</span>
+          <span class="ch-tag${isLeft?' left':''}">${ch.stick}</span>
+        </div>
+      </td>
+      <td><select id="sel-${ch.key}">${opts}</select></td>
+      <td style="text-align:center"><input type="checkbox" class="inv-chk" id="inv-${ch.key}"${cfg.invert?' checked':''}></td>
+      <td style="padding-right:10px">
+        <div class="chbw"><div class="chbc"></div><div class="chbv" id="chb-${ch.key}"></div></div>
+      </td>
+      <td><button class="det-btn" data-ch="${ch.key}">DETECT</button></td>`;
+    tbody.appendChild(tr);
+
+    tr.querySelector(`#sel-${ch.key}`).addEventListener('change',e=>{
+      axisMap[ch.key].axis=parseInt(e.target.value); saveMap();
+      buildAxesGrid(document.getElementById('axes-grid').children.length);
+    });
+    tr.querySelector(`#inv-${ch.key}`).addEventListener('change',e=>{
+      axisMap[ch.key].invert=e.target.checked; saveMap();
+    });
+    tr.querySelector('.det-btn').addEventListener('click',e=>startDetect(e.target.dataset.ch));
+  }
+}
+
+function refreshMappingUI(){
+  const gp=getGamepad();
+  const n=gp?Math.max(gp.axes.length,4):8;
+  buildAxesGrid(n);
+  buildChannelTable(n);
+  document.getElementById('db-slider').value=Math.round(axisMap.deadband*100);
+  document.getElementById('db-disp').textContent=Math.round(axisMap.deadband*100)+'%';
+  const nogp=document.getElementById('no-gp');
+  if(nogp) nogp.style.display=gp?'none':'block';
+  document.getElementById('cfg-tilt-slider').value=Math.round(camTiltDeg);
+  document.getElementById('cfg-tilt-disp').textContent=Math.round(camTiltDeg)+'°';
+  document.getElementById('cfg-fov-slider').value=Math.round(fovDeg);
+  document.getElementById('cfg-fov-disp').textContent=Math.round(fovDeg)+'°';
+}
+
+document.getElementById('cfg-tilt-slider').addEventListener('input',e=>{
+  camTiltDeg=parseFloat(e.target.value);
+  document.getElementById('cfg-tilt-disp').textContent=Math.round(camTiltDeg)+'°';
+});
+document.getElementById('cfg-fov-slider').addEventListener('input',e=>{
+  fovDeg=parseFloat(e.target.value);
+  cam.fov=fovDeg; cam.updateProjectionMatrix();
+  document.getElementById('cfg-fov-disp').textContent=Math.round(fovDeg)+'°';
+});
+
+// ── Live bars (every frame while modal open) ──
+function updateMappingLive(){
+  const gp=getGamepad();
+  if(!gp) return;
+  const ax=gp.axes;
+
+  for(let i=0;i<ax.length;i++){
+    const v=ax[i];
+    const bar=document.getElementById('ab'+i);
+    const num=document.getElementById('an'+i);
+    if(!bar) continue;
+    if(v>=0){ bar.style.left='50%'; bar.style.width=(v*50)+'%'; }
+    else     { bar.style.left=((1+v)*50)+'%'; bar.style.width=(-v*50)+'%'; }
+    if(num) num.textContent=v.toFixed(2);
+  }
+
+  for(const ch of CHANNELS){
+    const bar=document.getElementById('chb-'+ch.key);
+    if(!bar) continue;
+    const cfg=axisMap[ch.key];
+    if(cfg.axis<0||cfg.axis>=ax.length) continue;
+    let v=ax[cfg.axis]; if(cfg.invert) v=-v;
+    if(ch.bipolar){
+      if(v>=0){ bar.style.left='50%'; bar.style.width=(v*50)+'%'; }
+      else     { bar.style.left=((1+v)*50)+'%'; bar.style.width=(-v*50)+'%'; }
+    } else {
+      const pct=((v+1)/2*100).toFixed(1);
+      bar.style.left='0'; bar.style.width=pct+'%';
+    }
+  }
+
+  if(detectState){
+    const elapsed=Date.now()-detectState.startMs;
+    const remaining=Math.max(0,Math.ceil((detectState.durationMs-elapsed)/1000));
+    const btn=document.querySelector(`.det-btn[data-ch="${detectState.channel}"]`);
+    if(btn) btn.textContent=remaining>0?remaining+'...':'OK';
+    for(let i=0;i<ax.length;i++){
+      const abs=Math.abs(ax[i]);
+      if(!detectState.peaks[i]) detectState.peaks[i]={max:0,sign:0};
+      if(abs>detectState.peaks[i].max){
+        detectState.peaks[i].max=abs;
+        detectState.peaks[i].sign=Math.sign(ax[i]);
+      }
+    }
+    if(elapsed>=detectState.durationMs) finishDetect();
+  }
+}
+
+// ── Single-channel detect ─────────────────────
+function startDetect(chKey){
+  if(!getGamepad()){
+    document.getElementById('wiz-status').textContent='Connect a controller first.';
+    return;
+  }
+  if(detectState) finishDetect(true);
+  detectState={channel:chKey, startMs:Date.now(), durationMs:2500, peaks:{}};
+  const btn=document.querySelector(`.det-btn[data-ch="${chKey}"]`);
+  if(btn){ btn.classList.add('active'); btn.textContent='3...'; }
+  const ch=CHANNELS.find(c=>c.key===chKey);
+  setWizStatus(`Move the ${ch.label} stick (${ch.stick}) to full deflection...`);
+}
+
+function finishDetect(cancelled=false){
+  if(!detectState) return;
+  const {channel,peaks}=detectState;
+  detectState=null;
+  const btn=document.querySelector(`.det-btn[data-ch="${channel}"]`);
+  if(btn) btn.classList.remove('active');
+
+  if(!cancelled){
+    let bestIdx=-1, bestPeak=0.2;
+    for(const [k,v] of Object.entries(peaks)){
+      if(v.max>bestPeak){ bestPeak=v.max; bestIdx=parseInt(k); }
+    }
+    if(bestIdx>=0){
+      const sign=peaks[bestIdx].sign;
+      const ch=CHANNELS.find(c=>c.key===channel);
+      const invert=sign<0;
+      axisMap[channel].axis=bestIdx;
+      axisMap[channel].invert=invert;
+      saveMap();
+      const sel=document.getElementById('sel-'+channel);
+      if(sel) sel.value=bestIdx;
+      const inv=document.getElementById('inv-'+channel);
+      if(inv) inv.checked=invert;
+      if(btn){ btn.textContent='✓'; btn.classList.add('ok'); }
+      setTimeout(()=>{ if(btn){btn.textContent='DETECT';btn.classList.remove('ok');} },1800);
+      setWizStatus(`✓ ${ch.label} → AXIS ${bestIdx}${invert?' · inverted':''}`);
+    } else {
+      if(btn) btn.textContent='DETECT';
+      setWizStatus('No movement detected. Try again.');
+    }
+  } else {
+    if(btn) btn.textContent='DETECT';
+  }
+
+  if(!cancelled && wizQueue && wizQueue.length>0){
+    const next=wizQueue.shift();
+    setTimeout(()=>startDetect(next), 700);
+  } else if(wizQueue && wizQueue.length===0){
+    wizQueue=null;
+    document.getElementById('wiz-btn').disabled=false;
+    setWizStatus('✓ Mapping complete. Let\'s fly!');
+  }
+}
+
+function startWizard(){
+  if(!getGamepad()){ setWizStatus('Connect a controller first.'); return; }
+  document.getElementById('wiz-btn').disabled=true;
+  wizQueue=CHANNELS.slice(1).map(c=>c.key);
+  setWizStatus('');
+  startDetect(CHANNELS[0].key);
+}
+
+function setWizStatus(msg){ document.getElementById('wiz-status').textContent=msg; }
+
+// ── Deadband slider ───────────────────────────
+document.getElementById('db-slider').addEventListener('input',e=>{
+  const pct=parseInt(e.target.value);
+  axisMap.deadband=pct/100;
+  document.getElementById('db-disp').textContent=pct+'%';
+  saveMap();
+});
+
+// ── Tabs ──────────────────────────────────────
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Physics sliders ───────────────────────────
+function syncPhyUI(){
+  document.getElementById('ph-hover').value=Math.round(phy.hoverPct*100);
+  document.getElementById('pv-hover').textContent='×'+(1/phy.hoverPct).toFixed(1);
+  document.getElementById('ph-hoverstick').value=Math.round(phy.hoverStick*100);
+  document.getElementById('pv-hoverstick').textContent=Math.round(phy.hoverStick*100)+'%';
+  document.getElementById('ph-idle').value=Math.round(phy.idleThrottle*100);
+  document.getElementById('pv-idle').textContent=Math.round(phy.idleThrottle*100)+'%';
+  document.getElementById('ph-drag').value=Math.round(phy.linDrag*100);
+  document.getElementById('pv-drag').textContent=phy.linDrag.toFixed(2);
+  document.getElementById('ph-rate').value=phy.rateDeg;
+  document.getElementById('pv-rate').textContent=phy.rateDeg+'°/s';
+  document.getElementById('ph-yaw').value=phy.yawDeg;
+  document.getElementById('pv-yaw').textContent=phy.yawDeg+'°/s';
+  document.getElementById('ph-snap').value=phy.omegaR;
+  document.getElementById('pv-snap').textContent=phy.omegaR;
+  document.getElementById('ph-adrag').value=Math.round(phy.angDrag*100);
+  document.getElementById('pv-adrag').textContent=phy.angDrag.toFixed(2);
+}
+
+const PRESET_DESC={
+  beginner:'Smooth, stable flight — moderate thrust and slow turns. Ideal for learning.',
+  racing:'The classic racing balance — agile but controllable.',
+  freestyle:'Maximum angular agility for flips and acrobatic tricks.',
+  cinematic:'Slow, smooth movements — for relaxed camera shots.',
+};
+function updatePresetDesc(name){
+  const el=document.getElementById('preset-desc');
+  if(!el) return;
+  el.textContent='► '+(name&&PRESET_DESC[name] ? PRESET_DESC[name] : 'Custom configuration (manually adjusted).');
+}
+
+function markPreset(name){
+  document.querySelectorAll('.preset-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.preset===name);
+  });
+  updatePresetDesc(name);
+}
+
+function applyPreset(name){
+  if(!PHY_PRESETS[name]) return;
+  Object.assign(phy, PHY_PRESETS[name]);
+  syncPhyUI(); markPreset(name);
+  updateAnalysis(); markUnsaved();
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>applyPreset(btn.dataset.preset));
+});
+
+const sliderDefs=[
+  { id:'ph-hover', key:'hoverPct',     scale:0.01, disp:(v)=>'×'+(1/v).toFixed(1), dispId:'pv-hover' },
+  { id:'ph-hoverstick', key:'hoverStick', scale:0.01, disp:(v)=>Math.round(v*100)+'%', dispId:'pv-hoverstick' },
+  { id:'ph-idle',  key:'idleThrottle', scale:0.01, disp:(v)=>Math.round(v*100)+'%', dispId:'pv-idle'  },
+  { id:'ph-drag',  key:'linDrag',      scale:0.01, disp:(v)=>v.toFixed(2),           dispId:'pv-drag'  },
+  { id:'ph-rate',  key:'rateDeg',      scale:1,    disp:(v)=>v+'°/s',                dispId:'pv-rate'  },
+  { id:'ph-yaw',   key:'yawDeg',       scale:1,    disp:(v)=>v+'°/s',                dispId:'pv-yaw'   },
+  { id:'ph-snap',  key:'omegaR',       scale:1,    disp:(v)=>v,                      dispId:'pv-snap'  },
+  { id:'ph-adrag', key:'angDrag',      scale:0.01, disp:(v)=>v.toFixed(2),           dispId:'pv-adrag' },
+];
+
+sliderDefs.forEach(def=>{
+  const el=document.getElementById(def.id);
+  if(!el) return;
+  el.addEventListener('input',()=>{
+    phy[def.key]=parseFloat(el.value)*def.scale;
+    document.getElementById(def.dispId).textContent=def.disp(phy[def.key]);
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+    updatePresetDesc(null);
+    markUnsaved();
+    updateAnalysis();
+  });
+});
+
+// ── Toast ────────────────────────────────────
+let toastTimer=null;
+function showSaveToast(msg, color){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.borderColor=color||'rgba(0,229,255,.4)';
+  t.style.color=color||'#00e5ff';
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// ── Save-status helpers ──────────────────────
+function markUnsaved(){
+  document.getElementById('save-status').textContent='● UNSAVED';
+  document.getElementById('save-status').style.color='#ff9040';
+}
+function markSaved(ts){
+  const d=new Date(ts);
+  const hm=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+  document.getElementById('save-status').textContent='✓ SAVED';
+  document.getElementById('save-status').style.color='#00cc88';
+  document.getElementById('save-ts').textContent='last saved: '+hm;
+}
+function initSaveStatus(){
+  try{
+    const s=localStorage.getItem('fpv_phy');
+    if(!s){ document.getElementById('save-status').textContent='REAL-TIME CHANGES'; return; }
+    const p=JSON.parse(s);
+    if(p._ts) markSaved(p._ts);
+  }catch(e){}
+}
+
+// ── Analysis panel ───────────────────────────
+function updateAnalysis(){
+  const twr=(1/phy.hoverPct).toFixed(1);
+  const maxAcc=((1/phy.hoverPct - 1)*9.81).toFixed(1);  // net upward accel at full thr
+  // Terminal velocity with linear + quadratic drag: k1*v + k2*v² = g
+  const k1=phy.linDrag, k2=phy.linDrag*QUAD_DRAG_RATIO;
+  const termVel=(k2>1e-6 ? (-k1+Math.sqrt(k1*k1+4*k2*9.81))/(2*k2) : 9.81/(k1+0.001)).toFixed(1);
+  const dragPct=Math.round(phy.linDrag*100/0.6*100);  // relative 0-100
+  const ratePct=Math.round(phy.rateDeg/1200*100);
+  const snapPct=Math.round(phy.omegaR/50*100);
+  const angPct=Math.round((1-phy.angDrag)*100/0.3*100);
+
+  // Qualitative description
+  let notes=[];
+  if(phy.hoverPct<0.20) notes.push('Explosive thrust — aggressive dive recovery.');
+  else if(phy.hoverPct<0.26) notes.push('Balanced thrust — good punch without being uncontrollable.');
+  else notes.push('Gentle thrust — easier to control, ideal for learning.');
+  if(phy.linDrag>0.30) notes.push('High drag: a sense of weight and speed in the air.');
+  else if(phy.linDrag<0.06) notes.push('Minimal drag: free speed but can feel unrealistic.');
+  else notes.push('Moderate drag: smoothly slows high-speed maneuvers.');
+
+  const items=[
+    { label:'TWR (thrust-to-weight)', value:'×'+twr,
+      bar:Math.min(100,Math.round((1/phy.hoverPct-1)/6*100)),
+      color:'#00e5ff',
+      tip:'Thrust-to-weight ratio. ×2 minimum to climb, ×4-6 = real racing quad.' },
+    { label:'Max net acceleration', value:maxAcc+' m/s²',
+      bar:Math.min(100,Math.round(parseFloat(maxAcc)/50*100)),
+      color:'#00e5ff',
+      tip:'Net vertical acceleration at full throttle. Real: 25-50 m/s².' },
+    { label:'Linear drag', value:phy.linDrag.toFixed(2),
+      bar:Math.min(100,dragPct),
+      color:phy.linDrag>0.35?'#ff9040':'#00e5ff',
+      tip:'Air resistance. >0.4 = sense of weight. <0.05 = flying in a vacuum.' },
+    { label:'Approx. terminal velocity', value:'~'+termVel+' m/s',
+      bar:Math.min(100,Math.round(parseFloat(termVel)/80*100)),
+      color:'#00e5ff',
+      tip:'Maximum speed in free fall. Limits how fast you need to react.' },
+    { label:'Roll/pitch rates', value:phy.rateDeg+'°/s',
+      bar:ratePct,
+      color:'#00e5ff',
+      tip:'<300 = easy. 400-600 = freestyle. 700+ = aggressive racing.' },
+    { label:'Snap (motor response)', value:phy.omegaR,
+      bar:snapPct,
+      color:'#00e5ff',
+      tip:'How fast the motors respond. >35 = snappy and direct.' },
+  ];
+
+  const grid=document.getElementById('ap-grid');
+  grid.innerHTML='';
+  items.forEach(it=>{
+    const div=document.createElement('div');
+    div.className='ap-item';
+    div.innerHTML=`<strong>${it.label}</strong>${it.value}
+      <div class="ap-bar-wrap"><div class="ap-bar" style="width:${it.bar}%;background:${it.color}"></div></div>
+      <span style="font-size:8px;color:#3d6070;display:block;margin-top:2px">${it.tip}</span>`;
+    grid.appendChild(div);
+  });
+  const note=document.createElement('div');
+  note.className='ap-note';
+  note.textContent='▶ '+notes.join(' · ');
+  grid.appendChild(note);
+}
+
+// ── Preset & save buttons ────────────────────
+syncPhyUI();
+updateAnalysis();
+initSaveStatus();
+
+// Mark loaded preset if matches
+(function(){
+  const preset=detectPresetName();
+  if(preset) markPreset(preset);
+  else { document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active')); updatePresetDesc(null); }
+})();
+
+// ── Progressive disclosure: collapse advanced settings by default ──
+function setupAdvToggle(btnId, bodyId, storeKey, label){
+  const btn=document.getElementById(btnId), body=document.getElementById(bodyId);
+  if(!btn||!body) return;
+  let open=false;
+  try{ open=localStorage.getItem(storeKey)==='1'; }catch(e){}
+  const apply=()=>{
+    btn.classList.toggle('open',open);
+    body.classList.toggle('open',open);
+    btn.textContent=(open?'▾ ':'▸ ')+label;
+  };
+  apply();
+  btn.addEventListener('click',()=>{
+    open=!open;
+    try{ localStorage.setItem(storeKey, open?'1':'0'); }catch(e){}
+    apply();
+  });
+}
+setupAdvToggle('controller-adv-toggle','controller-adv-body','fpv_ui_controller_adv','MANUAL / ADVANCED SETTINGS');
+setupAdvToggle('physics-adv-toggle','physics-adv-body','fpv_ui_physics_adv','ADVANCED SETTINGS (sliders)');
+
+// ── World generation tab ─────────────────────
+const randomizeToggle=document.getElementById('randomize-toggle');
+const randomizeBtn=document.getElementById('randomize-btn');
+function syncRandomizeUI(){
+  randomizeToggle.checked=randomizeOnReset;
+  randomizeBtn.style.display=randomizeOnReset?'none':'inline-block';
+}
+syncRandomizeUI();
+randomizeToggle.addEventListener('change',()=>{
+  randomizeOnReset=randomizeToggle.checked;
+  try{ localStorage.setItem('fpv_world_randomize', randomizeOnReset?'1':'0'); }catch(e){}
+  syncRandomizeUI();
+});
+randomizeBtn.addEventListener('click',()=>{
+  buildCircuit();
+  showSaveToast('✓ WORLD RANDOMIZED');
+});
+
+// ── FPV attitude HUD toggle ──────────────────
+const fpvHudToggle=document.getElementById('fpvhud-toggle');
+fpvHudToggle.checked=fpvHudOn;
+fpvHudToggle.addEventListener('change',()=>{
+  fpvHudOn=fpvHudToggle.checked;
+  try{ localStorage.setItem('fpv_hud_overlay', fpvHudOn?'1':'0'); }catch(e){}
+  if(!fpvHudOn) fpvCtx.clearRect(0,0,innerWidth,innerHeight);
+});
+
+// ── Collision toggles ─────────────────────────
+const collideGatesToggle=document.getElementById('collide-gates-toggle');
+collideGatesToggle.checked=collideGates;
+collideGatesToggle.addEventListener('change',()=>{
+  collideGates=collideGatesToggle.checked;
+  try{ localStorage.setItem('fpv_collide_gates', collideGates?'1':'0'); }catch(e){}
+});
+
+const collideTreesToggle=document.getElementById('collide-trees-toggle');
+collideTreesToggle.checked=collideTrees;
+collideTreesToggle.addEventListener('change',()=>{
+  collideTrees=collideTreesToggle.checked;
+  try{ localStorage.setItem('fpv_collide_trees', collideTrees?'1':'0'); }catch(e){}
+});
+
+document.getElementById('map-btn').addEventListener('click',openMapping);
+document.getElementById('close-btn').addEventListener('click',closeMapping);
+document.getElementById('wiz-btn').addEventListener('click',startWizard);
+document.getElementById('map-modal').addEventListener('click',e=>{
+  if(e.target===document.getElementById('map-modal')) closeMapping();
+});
+
+document.getElementById('save-btn').addEventListener('click',()=>{
+  const ts=savePhy();
+  saveMap();
+  if(ts){
+    markSaved(ts);
+    showSaveToast('✓ CONFIG SAVED');
+  } else {
+    showSaveToast('⚠ SAVE ERROR','#ff6d00');
+  }
+});
+
+document.getElementById('reset-btn').addEventListener('click',()=>{
+  if(!confirm('Reset physics to default?')) return;
+  resetPhy();
+  syncPhyUI();
+  updateAnalysis();
+  initSaveStatus();
+  document.getElementById('save-status').textContent='RESET — unsaved';
+  document.getElementById('save-status').style.color='#ff9040';
+  document.getElementById('save-ts').textContent='';
+});
+
+// ═══════════════════════════════════════════════
+//  ENGINE SOUND — Web Audio, varies with throttle %
+// ═══════════════════════════════════════════════
+let soundEnabled=true;
+let audioCtx=null, motorOsc1=null, motorOsc2=null, motorGain=null, motorFilter=null, noiseGain=null;
+
+function initAudio(){
+  if(audioCtx) return;
+  try{
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+
+    motorGain=audioCtx.createGain(); motorGain.gain.value=0;
+    motorFilter=audioCtx.createBiquadFilter();
+    motorFilter.type='lowpass'; motorFilter.frequency.value=1500;
+
+    // Two slightly detuned oscillators mimic the buzz of 4 motors
+    motorOsc1=audioCtx.createOscillator(); motorOsc1.type='sawtooth'; motorOsc1.frequency.value=90;
+    motorOsc2=audioCtx.createOscillator(); motorOsc2.type='sawtooth'; motorOsc2.frequency.value=91.5;
+    const merge=audioCtx.createGain(); merge.gain.value=0.5;
+    motorOsc1.connect(merge); motorOsc2.connect(merge);
+    merge.connect(motorFilter); motorFilter.connect(motorGain); motorGain.connect(audioCtx.destination);
+    motorOsc1.start(); motorOsc2.start();
+
+    // Airflow / propeller noise
+    const bufSize=Math.floor(audioCtx.sampleRate*2);
+    const buf=audioCtx.createBuffer(1,bufSize,audioCtx.sampleRate);
+    const data=buf.getChannelData(0);
+    for(let i=0;i<bufSize;i++) data[i]=Math.random()*2-1;
+    const noiseSrc=audioCtx.createBufferSource(); noiseSrc.buffer=buf; noiseSrc.loop=true;
+    const noiseFilter=audioCtx.createBiquadFilter();
+    noiseFilter.type='bandpass'; noiseFilter.frequency.value=2200; noiseFilter.Q.value=0.5;
+    noiseGain=audioCtx.createGain(); noiseGain.gain.value=0;
+    noiseSrc.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(audioCtx.destination);
+    noiseSrc.start();
+  }catch(e){ audioCtx=null; }
+}
+
+// thrNorm: current effective thrust (drone.thr), 0..~1 — already includes motor spool-up delay
+function updateMotorSound(thrNorm){
+  if(!audioCtx) return;
+  if(audioCtx.state==='suspended') audioCtx.resume();
+  const t=audioCtx.currentTime;
+  const mute=!soundEnabled;
+  const freq=85+thrNorm*270;
+  motorOsc1.frequency.setTargetAtTime(freq,t,0.05);
+  motorOsc2.frequency.setTargetAtTime(freq*1.014,t,0.05);
+  motorFilter.frequency.setTargetAtTime(1200+thrNorm*5200,t,0.08);
+  motorGain.gain.setTargetAtTime(mute?0:0.03+thrNorm*0.15,t,0.06);
+  noiseGain.gain.setTargetAtTime(mute?0:0.008+thrNorm*0.045,t,0.08);
+}
+
+function playCrashThud(){
+  if(!audioCtx || !soundEnabled) return;
+  const dur=0.35;
+  const buf=audioCtx.createBuffer(1,Math.floor(audioCtx.sampleRate*dur),audioCtx.sampleRate);
+  const data=buf.getChannelData(0);
+  for(let i=0;i<data.length;i++){
+    const decay=Math.pow(1-i/data.length,3);
+    data[i]=(Math.random()*2-1)*decay;
+  }
+  const src=audioCtx.createBufferSource(); src.buffer=buf;
+  const filt=audioCtx.createBiquadFilter(); filt.type='lowpass'; filt.frequency.value=350;
+  const g=audioCtx.createGain(); g.gain.value=0.9;
+  src.connect(filt); filt.connect(g); g.connect(audioCtx.destination);
+  src.start();
+}
+
+document.getElementById('sound-btn').addEventListener('click',()=>{
+  soundEnabled=!soundEnabled;
+  document.getElementById('sound-btn').textContent=soundEnabled?'🔊':'🔇';
+});
+
+// ═══════════════════════════════════════════════
+//  FULLSCREEN
+// ═══════════════════════════════════════════════
+function isFullscreen(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function toggleFullscreen(){
+  const el=document.documentElement;
+  if(!isFullscreen()){
+    const req=el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if(req){ const p=req.call(el); if(p && p.catch) p.catch(()=>{}); }
+  } else {
+    const exit=document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if(exit) exit.call(document);
+  }
+}
+document.getElementById('fullscreen-btn').addEventListener('click',toggleFullscreen);
+['fullscreenchange','webkitfullscreenchange'].forEach(evt=>{
+  document.addEventListener(evt,()=>{
+    document.getElementById('fullscreen-btn').textContent=isFullscreen()?'⤡':'⤢';
+  });
+});
+
+// ═══════════════════════════════════════════════
+//  FLIGHT MODE (Acro / Balanced) — click the badge to switch
+// ═══════════════════════════════════════════════
+function updateModeBadge(){
+  document.querySelector('.mode-badge').textContent = flightMode==='balanced' ? 'BALANCED MODE' : 'ACRO MODE';
+}
+document.querySelector('.mode-badge').addEventListener('click',()=>{
+  flightMode = flightMode==='balanced' ? 'acro' : 'balanced';
+  try{ localStorage.setItem('fpv_flight_mode', flightMode); }catch(e){}
+  updateModeBadge();
+});
+updateModeBadge();
+
+// ═══════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════
+let last=performance.now(), running=false;
+
+function loop(){
+  if(!running) return;
+  requestAnimationFrame(loop);
+  const now=performance.now(), dt=(now-last)/1000; last=now;
+
+  readInput(dt);
+
+  if(!mappingOpen){
+    physics(dt);
+    if(crashState){
+      crashState.t+=dt;
+      if(crashState.t>CRASH_RESPAWN_T){ crashState=null; resetDrone(); }
+    } else {
+      checkGates();
+    }
+    cam.position.copy(drone.pos);
+    Q_TILT.setFromAxisAngle(_TILT_AXIS, camTiltDeg*Math.PI/180);
+    cam.quaternion.copy(drone.quat).multiply(Q_TILT);
+    updateHUD();
+    updateMotorSound(drone.thr);
+  } else {
+    updateMappingLive();
+  }
+
+  renderer.render(scene,cam);
+}
+
+// ═══════════════════════════════════════════════
+//  RESIZE + GAMEPAD EVENTS
+// ═══════════════════════════════════════════════
+window.addEventListener('resize',()=>{
+  cam.aspect=innerWidth/innerHeight;
+  cam.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  resizeFpvHud();
+});
+window.addEventListener('gamepadconnected',e=>{
+  document.getElementById('gpname').textContent=e.gamepad.id.slice(0,26);
+  if(mappingOpen) refreshMappingUI();
+});
+window.addEventListener('gamepaddisconnected',()=>{
+  document.getElementById('gpname').textContent='NO CONTROLLER';
+  const nogp=document.getElementById('no-gp');
+  if(mappingOpen && nogp) nogp.style.display='block';
+});
+
+// ═══════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════
+document.getElementById('btn-start').addEventListener('click',()=>{
+  document.getElementById('splash').style.display='none';
+  initAudio();
+  running=true; last=performance.now(); loop();
+});
+</script>
+</body>
+</html>
