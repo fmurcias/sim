@@ -4,7 +4,7 @@ A browser-based FPV (first-person view) drone racing simulator in **acro/balance
 
 ## Running it
 
-Open [fpv_sim_v5.html](fpv_sim_v5.html) directly in a browser.
+Open [index.html](index.html) directly in a browser.
 
 ## Controls
 
