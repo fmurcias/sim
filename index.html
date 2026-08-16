@@ -2,23 +2,74 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050a12">
+<meta name="google-site-verification" content="xshOZZhVltxaMU2X-pFqjg4-7_McIyIJwDxKA8xrDuI" />
 <title>FPV Drone Sim</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050a12'/%3E%3Cg stroke='%2300e5ff' stroke-width='2' fill='none'%3E%3Ccircle cx='9' cy='9' r='4'/%3E%3Ccircle cx='23' cy='9' r='4'/%3E%3Ccircle cx='9' cy='23' r='4'/%3E%3Ccircle cx='23' cy='23' r='4'/%3E%3Cpath d='M9 9 23 23M23 9 9 23'/%3E%3C/g%3E%3C/svg%3E">
 <style>
+  /* ── DESIGN TOKENS ──
+     One palette for the whole product. The HUD was always cyan-on-near-black
+     while the splash/settings chrome was a separate light theme; both now read
+     from these, so the splash → game transition no longer flashes white. */
+  :root{
+    --bg:#050a12;            /* page / deepest background */
+    --panel:#0b1420;         /* modal + splash card surface */
+    --panel-2:#111d2c;       /* raised rows, headers, footers */
+    --panel-3:#16263a;       /* hover fills */
+    --line:#1e3348;          /* borders */
+    --line-soft:#152537;     /* subtle dividers */
+    --fg:#d6e9f2;            /* primary text */
+    --fg-dim:#8fb0c2;        /* secondary text */
+    --fg-faint:#5d7f92;      /* tertiary text / hints */
+    --accent:#00e5ff;        /* cyan — primary action, telemetry */
+    --accent-dim:rgba(0,229,255,.4);
+    --accent-soft:rgba(0,229,255,.12);
+    --warn:#ffb830;          /* amber — section titles, left stick, unsaved */
+    --warn-dim:rgba(255,184,48,.4);
+    --warn-soft:rgba(255,184,48,.1);
+    --danger:#ff4d4d;
+    --ok:#3ddc84;
+    --mono:'Courier New',monospace;
+  }
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#050a12;overflow:hidden;font-family:'Courier New',monospace}
-  canvas{display:block}
+  body{background:var(--bg);overflow:hidden;font-family:var(--mono);
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  canvas{display:block;touch-action:none}
 
   /* ── HUD ── */
-  #hud{position:fixed;inset:0;pointer-events:none;color:#00e5ff;font-size:12px}
-  #tele{position:absolute;top:12px;left:12px;line-height:2.1;text-shadow:0 0 8px rgba(0,229,255,.8)}
+  #hud{position:fixed;inset:0;pointer-events:none;color:var(--accent);font-size:12px}
+  /* The cyan glow alone disappears against the DAY sky, so every free-floating
+     HUD label also carries a dark drop shadow for contrast on light backgrounds. */
+  #tele{position:absolute;top:12px;left:12px;line-height:2.1;
+    text-shadow:0 0 8px rgba(0,229,255,.8),0 1px 3px rgba(0,0,0,.85)}
   #tele span{color:#fff;font-size:13px}
-  #gps{position:absolute;top:12px;right:12px;font-size:11px;text-shadow:0 0 5px rgba(0,229,255,.6);color:#8abfcc}
+  #gps{position:absolute;top:12px;right:12px;font-size:11px;color:#8abfcc;
+    text-shadow:0 0 5px rgba(0,229,255,.6),0 1px 3px rgba(0,0,0,.85)}
   #gate-hud{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:13px;
     text-shadow:0 0 8px rgba(0,229,255,.8);background:rgba(5,10,18,.6);padding:3px 14px;
     border:1px solid rgba(0,229,255,.2)}
+
+  /* ── LAP TIMER ── */
+  #lap-hud{position:absolute;top:40px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:1px;
+    background:rgba(5,10,18,.55);border:1px solid rgba(0,229,255,.15);
+    padding:4px 18px 5px;white-space:nowrap;
+    text-shadow:0 0 8px rgba(0,229,255,.7),0 1px 3px rgba(0,0,0,.9)}
+  #lap-time{font-size:22px;letter-spacing:1px;color:var(--accent);
+    font-variant-numeric:tabular-nums;transition:color .2s}
+  #lap-time.dirty{color:var(--danger)}
+  #lap-time.flash{animation:lapflash .9s ease-out}
+  @keyframes lapflash{0%{transform:scale(1.25);color:#fff}100%{transform:scale(1);color:var(--accent)}}
+  #lap-sub{font-size:10px;letter-spacing:1.5px;color:var(--fg-dim);display:flex;gap:10px}
+  #lap-delta{font-variant-numeric:tabular-nums}
+  #lap-delta.ahead{color:var(--ok)}
+  #lap-delta.behind{color:var(--danger)}
+
   #help{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);font-size:10px;
-    opacity:.45;white-space:nowrap;color:#7aaabb;letter-spacing:.3px}
+    opacity:.55;white-space:nowrap;color:#bcd8e4;letter-spacing:.3px;
+    text-shadow:0 1px 3px rgba(0,0,0,.9);transition:opacity .8s ease}
+  #help.faded{opacity:0}
   #thr-bar{position:absolute;left:24px;bottom:30px;width:6px;height:70px;
     border:1px solid rgba(0,229,255,.3);background:rgba(0,229,255,.04)}
   #thr-fill{position:absolute;bottom:0;width:100%;
@@ -26,215 +77,258 @@
   #crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
   #fpv-hud{position:absolute;inset:0;pointer-events:none}
   .mode-badge{position:absolute;bottom:12px;left:12px;font-size:10px;opacity:.55;
-    color:#00e5ff;letter-spacing:1px;background:rgba(5,10,18,.5);padding:2px 8px;
+    color:var(--accent);letter-spacing:1px;background:rgba(5,10,18,.5);padding:2px 8px;
     border:1px solid rgba(0,229,255,.15);pointer-events:all;cursor:pointer;transition:all .2s}
-  .mode-badge:hover{opacity:.9;border-color:rgba(0,229,255,.5)}
+  .mode-badge:hover{opacity:.9;border-color:var(--accent-dim)}
   #hud-btn-row{position:absolute;bottom:12px;right:12px;display:flex;gap:8px;pointer-events:none}
   #hud-btn-row>button{pointer-events:all}
-  #map-btn{background:rgba(5,14,30,.85);border:1px solid rgba(0,229,255,.4);color:#00e5ff;
-    font-family:'Courier New',monospace;font-size:10px;padding:6px 14px;cursor:pointer;
+  #map-btn{background:rgba(5,14,30,.85);border:1px solid var(--accent-dim);color:var(--accent);
+    font-family:var(--mono);font-size:10px;padding:6px 14px;cursor:pointer;
     letter-spacing:1px;transition:all .2s}
-  #map-btn:hover{background:rgba(0,229,255,.12);border-color:#00e5ff;
+  #map-btn:hover{background:var(--accent-soft);border-color:var(--accent);
     box-shadow:0 0 16px rgba(0,229,255,.2)}
+
+  /* ── CRASH BANNER ── */
+  #crash-banner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.9);
+    display:none;flex-direction:column;align-items:center;gap:6px;z-index:2;
+    background:rgba(5,10,18,.72);border:1px solid rgba(255,77,77,.55);
+    padding:14px 30px;text-align:center;pointer-events:none}
+  #crash-banner.show{display:flex;animation:crashin .18s ease-out forwards}
+  @keyframes crashin{to{transform:translate(-50%,-50%) scale(1)}}
+  #crash-title{font-size:17px;letter-spacing:3px;color:var(--danger);
+    text-shadow:0 0 14px rgba(255,77,77,.7)}
+  #crash-sub{font-size:10px;letter-spacing:2px;color:var(--fg-faint)}
+  #crash-meter{width:150px;height:2px;background:rgba(255,77,77,.2);overflow:hidden}
+  #crash-meter-fill{height:100%;width:0;background:var(--danger)}
 
   /* ── ATTITUDE INDICATOR (ADI) ── */
   #adi-wrap{position:absolute;right:14px;bottom:56px;display:flex;flex-direction:column;
     align-items:center;gap:3px}
-  #adi{display:block}
+  #adi{display:block;width:82px;height:82px}
   #adi-label{font-size:8px;color:rgba(0,229,255,.45);letter-spacing:2px}
   #adi-angles{font-size:9px;color:rgba(0,229,255,.6);text-align:center;line-height:1.5}
 
+  /* ── TOUCH CONTROLS ──
+     Two virtual sticks matching the Mode 2 layout: left = throttle (self-latching,
+     like a real throttle stick) + yaw, right = self-centering pitch/roll. */
+  #touch-controls{position:absolute;inset:0;display:none;pointer-events:none}
+  #touch-controls.on{display:block}
+  .tstick{position:absolute;bottom:max(22px,env(safe-area-inset-bottom));
+    width:132px;height:132px;border-radius:50%;pointer-events:all;touch-action:none;
+    border:1px solid rgba(0,229,255,.25);background:rgba(5,14,30,.35)}
+  #tstick-l{left:max(18px,env(safe-area-inset-left))}
+  #tstick-r{right:max(18px,env(safe-area-inset-right))}
+  .tstick::before,.tstick::after{content:'';position:absolute;background:rgba(0,229,255,.13)}
+  .tstick::before{left:8%;right:8%;top:50%;height:1px}
+  .tstick::after{top:8%;bottom:8%;left:50%;width:1px}
+  .tknob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;
+    border-radius:50%;background:rgba(0,229,255,.16);border:1px solid rgba(0,229,255,.55);
+    box-shadow:0 0 14px rgba(0,229,255,.25);will-change:transform}
+  .tstick-lbl{position:absolute;top:-16px;left:0;right:0;text-align:center;
+    font-size:9px;letter-spacing:1.5px;color:rgba(0,229,255,.75);
+    text-shadow:0 1px 3px rgba(0,0,0,.9)}
+
   /* ── SPLASH ── */
   #splash{position:fixed;inset:0;
-    background:radial-gradient(ellipse at 30% 40%,#eef6f9 0%,#f7f8fa 70%);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99}
+    background:radial-gradient(ellipse at 30% 40%,#0d1a28 0%,var(--bg) 70%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99;
+    transition:opacity .35s ease}
+  #splash.hiding{opacity:0;pointer-events:none}
   #splash::before{content:'';position:absolute;inset:0;
-    background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(10,30,40,.035) 40px),
-               repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(10,30,40,.035) 40px);
+    background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,229,255,.045) 40px),
+               repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(0,229,255,.045) 40px);
     pointer-events:none}
   #splash h1{font-size:44px;letter-spacing:14px;margin-bottom:4px;
-    color:#0a7ea6;position:relative}
-  #splash .subtitle{font-size:11px;letter-spacing:4px;color:#8b98a3;margin-bottom:28px}
+    color:var(--accent);position:relative;text-shadow:0 0 26px rgba(0,229,255,.35)}
+  #splash .subtitle{font-size:11px;letter-spacing:4px;color:var(--fg-faint);margin-bottom:28px}
 
   .splash-panel{display:flex;gap:16px;margin-bottom:20px;max-width:640px;width:100%;padding:0 16px}
-  .splash-box{flex:1;background:#fff;border:1px solid #d7dce1;padding:16px 18px}
-  .splash-box .box-title{font-size:10px;letter-spacing:3px;color:#b45309;margin-bottom:10px;font-weight:bold}
+  .splash-box{flex:1;background:var(--panel);border:1px solid var(--line);padding:16px 18px}
+  .splash-box .box-title{font-size:10px;letter-spacing:3px;color:var(--warn);margin-bottom:10px;font-weight:bold}
   .tbl{font-size:13px}
   .tbl .row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;
-    border-bottom:1px solid #eef1f4;color:#5a6b78}
+    border-bottom:1px solid var(--line-soft);color:var(--fg-dim)}
   .tbl .row:last-child{border-bottom:none}
-  .tbl .val-col{color:#0a7ea6;text-align:right;font-size:12px;letter-spacing:.5px}
+  .tbl .val-col{color:var(--accent);text-align:right;font-size:12px;letter-spacing:.5px}
 
-  .btn-g{background:#fff;border:1px solid #a9d3e0;color:#0a7ea6;
-    font-family:'Courier New',monospace;cursor:pointer;letter-spacing:2px;transition:all .2s}
-  .btn-g:hover{background:#eef6f9;border-color:#0a7ea6}
-  #btn-start{font-size:15px;padding:13px 52px;background:#0a7ea6;color:#fff;border-color:#0a7ea6}
-  #btn-start:hover{background:#086a8c;border-color:#086a8c}
+  .btn-g{background:var(--panel-2);border:1px solid var(--accent-dim);color:var(--accent);
+    font-family:var(--mono);cursor:pointer;letter-spacing:2px;transition:all .2s}
+  .btn-g:hover{background:var(--accent-soft);border-color:var(--accent)}
+  .btn-g:disabled{opacity:.4;cursor:default}
+  #btn-start{font-size:15px;padding:13px 52px;background:var(--accent);color:#04222b;
+    border-color:var(--accent);font-weight:bold}
+  #btn-start:hover{background:#5cf0ff;border-color:#5cf0ff}
 
-  /* ── ATTITUDE INDICATOR ── */
-  #atti-wrap{position:absolute;bottom:58px;right:12px;pointer-events:none}
-  #atti-label{font-size:8px;color:rgba(0,229,255,.4);letter-spacing:2px;
-    text-align:center;margin-bottom:3px}
-  #atti-nums{display:flex;justify-content:space-between;margin-top:3px;
-    font-size:9px;color:rgba(0,229,255,.55)}
-  #atti-roll-disp{text-align:left}
-  #atti-pitch-disp{text-align:right}
-  #map-modal{position:fixed;inset:0;background:rgba(20,26,32,.55);z-index:80;
-    display:none;align-items:center;justify-content:center}
+  /* ── SETTINGS MODAL ── */
+  #map-modal{position:fixed;inset:0;background:rgba(2,6,12,.72);z-index:80;
+    display:none;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
   #map-modal.open{display:flex}
   #map-card{width:740px;max-width:96vw;
-    background:#f7f8fa;box-shadow:0 8px 40px rgba(20,26,32,.25),0 0 0 1px #d7dce1;
+    background:var(--panel);box-shadow:0 8px 50px rgba(0,0,0,.6),0 0 0 1px var(--line);
     max-height:94vh;overflow-y:auto}
   .modal-header{padding:18px 28px 16px;
-    background:#eef1f4;
-    border-bottom:1px solid #d7dce1;display:flex;align-items:center}
-  .modal-header h2{font-size:18px;letter-spacing:4px;color:#1c2733;flex:1}
+    background:var(--panel-2);
+    border-bottom:1px solid var(--line);display:flex;align-items:center}
+  .modal-header h2{font-size:18px;letter-spacing:4px;color:var(--accent);flex:1}
   .modal-body{padding:12px 18px}
 
-  .sec-title{font-size:13px;color:#b45309;letter-spacing:1.5px;margin-bottom:8px;margin-top:14px;
+  .sec-title{font-size:13px;color:var(--warn);letter-spacing:1.5px;margin-bottom:8px;margin-top:14px;
     display:flex;align-items:center;gap:10px;font-weight:bold}
-  .sec-title::after{content:'';flex:1;height:1px;background:#e3ccb0}
+  .sec-title::after{content:'';flex:1;height:1px;background:var(--warn-dim)}
+
+  /* Shared explainer paragraph under each settings section. Collapsed by default
+     and revealed by the ⓘ button in the section title, so the panel stays scannable
+     for someone who already knows what the controls do. */
+  .hint{display:none;font-size:13px;color:var(--fg-dim);padding:8px 9px;line-height:1.5;
+    margin-bottom:10px;
+    background:var(--panel-2);border:1px solid var(--line);border-left:2px solid var(--accent)}
+  .hint.open{display:block}
+  .info-btn{flex:none;width:17px;height:17px;padding:0;line-height:1;
+    border:1px solid var(--warn-dim);background:transparent;color:var(--warn);
+    font-family:var(--mono);font-size:11px;border-radius:50%;cursor:pointer;
+    transition:all .18s;opacity:.75}
+  .info-btn:hover{opacity:1;border-color:var(--warn);background:var(--warn-soft)}
+  .info-btn.open{opacity:1;background:var(--warn);color:var(--bg);border-color:var(--warn)}
+  .chk-row{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+  .chk-lbl{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--fg)}
 
   /* axes monitor */
   #axes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:5px}
   .ax-row{display:flex;align-items:center;gap:8px;font-size:14px;
-    background:#fff;padding:5px 8px;border:1px solid #d7dce1}
-  .ax-lbl{width:64px;color:#5a6b78;font-size:14px}
-  .bw{flex:1;height:6px;background:#eef1f4;border:1px solid #d7dce1;
+    background:var(--panel-2);padding:5px 8px;border:1px solid var(--line)}
+  .ax-lbl{width:64px;color:var(--fg-dim);font-size:14px}
+  .bw{flex:1;height:6px;background:var(--bg);border:1px solid var(--line);
     position:relative;overflow:hidden}
-  .bc{position:absolute;left:50%;top:0;width:1px;height:100%;background:#c3cad1}
-  .bv{position:absolute;top:0;height:100%;background:#0a7ea6;transition:left .04s,width .04s}
-  .ax-num{width:58px;text-align:right;color:#5a6b78;font-size:14px}
-  .ax-badge{font-size:11px;padding:1px 6px;border:1px solid #d9a76a;
-    color:#b45309;letter-spacing:.5px;white-space:nowrap;display:none;
-    background:#fbf0e2}
+  .bc{position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--fg-faint)}
+  .bv{position:absolute;top:0;height:100%;background:var(--accent);transition:left .04s,width .04s}
+  .ax-num{width:58px;text-align:right;color:var(--fg-dim);font-size:14px}
+  .ax-badge{font-size:11px;padding:1px 6px;border:1px solid var(--warn-dim);
+    color:var(--warn);letter-spacing:.5px;white-space:nowrap;display:none;
+    background:var(--warn-soft)}
   .ax-badge.vis{display:inline-block}
 
   /* ── MODE 2 compact strip ── */
   #mode2-strip{display:flex;gap:0;align-items:stretch;margin:6px 0 8px;
-    border:1px solid #d7dce1;overflow:hidden}
+    border:1px solid var(--line);overflow:hidden}
   .m2-cell{flex:1;padding:6px 8px;display:flex;flex-direction:column;gap:2px;
-    border-right:1px solid #d7dce1}
+    border-right:1px solid var(--line)}
   .m2-cell:last-child{border-right:none}
-  .m2-cell.left-stick{background:#fbf3ea}
-  .m2-cell.right-stick{background:#eef6f9}
-  .m2-header{font-size:12px;letter-spacing:1.5px;color:#b45309;margin-bottom:3px;font-weight:bold}
-  .m2-header.right{color:#0a7ea6}
-  .m2-line{font-size:14px;color:#1c2733;display:flex;justify-content:space-between;gap:6px}
-  .m2-line span{color:#5a6b78;font-size:12px}
+  .m2-cell.left-stick{background:var(--warn-soft)}
+  .m2-cell.right-stick{background:var(--accent-soft)}
+  .m2-header{font-size:12px;letter-spacing:1.5px;color:var(--warn);margin-bottom:3px;font-weight:bold}
+  .m2-header.right{color:var(--accent)}
+  .m2-line{font-size:14px;color:var(--fg);display:flex;justify-content:space-between;gap:6px}
+  .m2-line span{color:var(--fg-dim);font-size:12px}
 
   /* channel table */
   #ch-table{width:100%;border-collapse:collapse;font-size:16px;margin-bottom:4px}
-  #ch-table th{font-size:12px;color:#b45309;letter-spacing:1px;padding:5px 6px;
-    font-weight:bold;text-align:left;border-bottom:1px solid #e3ccb0}
-  #ch-table td{padding:6px 6px;vertical-align:middle;border-bottom:1px solid #e6e9ec}
+  #ch-table th{font-size:12px;color:var(--warn);letter-spacing:1px;padding:5px 6px;
+    font-weight:bold;text-align:left;border-bottom:1px solid var(--warn-dim)}
+  #ch-table td{padding:6px 6px;vertical-align:middle;border-bottom:1px solid var(--line-soft)}
   #ch-table tr:last-child td{border-bottom:none}
-  #ch-table select{background:#fff;color:#1c2733;border:1px solid #c3cad1;
-    font-family:'Courier New',monospace;font-size:14px;padding:5px 6px;cursor:pointer;width:114px}
-  .inv-chk{width:16px;height:16px;cursor:pointer;accent-color:#0a7ea6}
-  .chbw{height:6px;background:#eef1f4;border:1px solid #d7dce1;
+  #ch-table select{background:var(--panel-2);color:var(--fg);border:1px solid var(--line);
+    font-family:var(--mono);font-size:14px;padding:5px 6px;cursor:pointer;width:114px}
+  .inv-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--accent)}
+  .gen-select{background:var(--panel-2);color:var(--fg);border:1px solid var(--line);
+    font-family:var(--mono);font-size:14px;padding:6px 10px;cursor:pointer}
+  .chbw{height:6px;background:var(--bg);border:1px solid var(--line);
     position:relative;overflow:hidden;min-width:108px}
-  .chbv{position:absolute;top:0;height:100%;background:#0a7ea6;transition:left .04s,width .04s}
-  .chbc{position:absolute;left:50%;top:0;width:1px;height:100%;background:#c3cad1}
-  .det-btn{background:#fff;border:1px solid #c3cad1;color:#1c2733;
-    font-family:'Courier New',monospace;font-size:15px;padding:6px 10px;cursor:pointer;
+  .chbv{position:absolute;top:0;height:100%;background:var(--accent);transition:left .04s,width .04s}
+  .chbc{position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--fg-faint)}
+  .det-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg);
+    font-family:var(--mono);font-size:15px;padding:6px 10px;cursor:pointer;
     letter-spacing:.5px;white-space:nowrap;min-width:104px;transition:all .2s}
-  .det-btn:hover{background:#eef6f9;border-color:#0a7ea6}
-  .det-btn.active{border-color:#b45309;color:#b45309;animation:blink .55s infinite alternate}
-  .det-btn.ok{border-color:#0a7ea6;color:#0a7ea6;background:#eef6f9}
+  .det-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+  .det-btn.active{border-color:var(--warn);color:var(--warn);animation:blink .55s infinite alternate}
+  .det-btn.ok{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
   @keyframes blink{from{opacity:.4}to{opacity:1}}
 
   /* channel info cell */
   .ch-info{display:flex;flex-direction:column;gap:2px}
-  .ch-name{font-size:15px;color:#1c2733;letter-spacing:.5px}
-  .ch-sub{font-size:11px;color:#5a6b78}
+  .ch-name{font-size:15px;color:var(--fg);letter-spacing:.5px}
+  .ch-sub{font-size:11px;color:var(--fg-dim)}
   .ch-tag{display:inline-block;font-size:11px;padding:1px 5px;
-    border:1px solid #a9d3e0;color:#0a7ea6;background:#eef6f9}
-  .ch-tag.left{border-color:#d9a76a;color:#b45309;background:#fbf0e2}
+    border:1px solid var(--accent-dim);color:var(--accent);background:var(--accent-soft)}
+  .ch-tag.left{border-color:var(--warn-dim);color:var(--warn);background:var(--warn-soft)}
 
   /* deadband */
   #db-row{display:flex;align-items:center;gap:12px;margin:8px 0 10px}
-  #db-row label{font-size:14px;color:#5a6b78;white-space:nowrap}
-  #db-slider{flex:1;accent-color:#0a7ea6;cursor:pointer}
-  #db-disp{font-size:15px;min-width:40px;text-align:right;color:#0a7ea6}
+  #db-row label{font-size:14px;color:var(--fg-dim);white-space:nowrap}
+  #db-slider{flex:1;accent-color:var(--accent);cursor:pointer}
+  #db-disp{font-size:15px;min-width:40px;text-align:right;color:var(--accent)}
 
   /* wizard */
   #wiz-row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
   #wiz-btn{font-size:16px;padding:9px 18px}
-  #wiz-status{font-size:14px;color:#b45309;letter-spacing:.3px;min-height:18px}
+  #wiz-status{font-size:14px;color:var(--warn);letter-spacing:.3px;min-height:18px}
 
   /* footer */
   #map-footer{display:flex;justify-content:space-between;align-items:center;
-    padding:12px 18px;border-top:1px solid #d7dce1;background:#eef1f4;gap:8px}
+    padding:12px 18px;border-top:1px solid var(--line);background:var(--panel-2);gap:8px;
+    position:sticky;bottom:0}
   .footer-left{display:flex;flex-direction:column;gap:2px;min-width:0}
-  #save-status{font-size:12px;color:#8b98a3;letter-spacing:1px;white-space:nowrap}
-  #save-ts{font-size:11px;color:#a8b2ba;letter-spacing:.5px;min-height:13px}
+  #save-status{font-size:12px;color:var(--fg-faint);letter-spacing:1px;white-space:nowrap}
+  #save-ts{font-size:11px;color:var(--fg-faint);letter-spacing:.5px;min-height:13px}
   .footer-btns{display:flex;gap:8px;align-items:center;flex-shrink:0}
-  #save-btn{font-size:15px;padding:9px 18px;color:#0a7ea6;border:1px solid #a9d3e0;background:#fff}
-  #save-btn:hover{background:#eef6f9;border-color:#0a7ea6;box-shadow:none;text-shadow:none}
-  #reset-btn{font-size:15px;padding:9px 14px;color:#b45309;border:1px solid #d9a76a;background:#fff}
-  #reset-btn:hover{border-color:#b45309;color:#b45309;background:#fbf0e2;box-shadow:none;text-shadow:none}
-  #close-btn{font-size:16px;padding:11px 24px;color:#0a7ea6;border:1px solid #a9d3e0;background:#fff}
-  #close-btn:hover{background:#eef6f9;border-color:#0a7ea6;box-shadow:none;text-shadow:none}
-  #no-gp{font-size:14px;color:#b45309;display:none}
+  #save-btn{font-size:15px;padding:9px 18px}
+  #reset-btn{font-size:15px;padding:9px 14px;color:var(--warn);border-color:var(--warn-dim)}
+  #reset-btn:hover{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
+  #reset-btn.confirming{color:var(--danger);border-color:var(--danger);background:rgba(255,77,77,.1)}
+  #close-btn{font-size:16px;padding:11px 24px}
+  #no-gp{font-size:14px;color:var(--warn);display:none}
 
   /* ── TOAST ── */
   #toast{position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-60px);
-    background:#0d2035;border:1px solid rgba(0,229,255,.4);color:#00e5ff;
-    font-family:'Courier New',monospace;font-size:11px;letter-spacing:2px;
+    background:#0d2035;border:1px solid var(--accent-dim);color:var(--accent);
+    font-family:var(--mono);font-size:11px;letter-spacing:2px;
     padding:9px 24px;z-index:200;transition:transform .3s ease,opacity .3s ease;
     opacity:0;pointer-events:none;white-space:nowrap;
     box-shadow:0 0 30px rgba(0,229,255,.1)}
   #toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 
   /* ── ANALYSIS PANEL ── */
-  .ap-title{font-size:13px;color:#b45309;letter-spacing:1.5px;margin-bottom:8px}
   .ap-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
-  .ap-item{font-size:13px;color:#5a6b78;line-height:1.5;padding:6px 8px;
-    background:#fff;border:1px solid #e6e9ec}
-  .ap-item strong{color:#1c2733;display:block;font-size:15px;margin-bottom:3px}
-  .ap-bar-wrap{height:4px;background:#eef1f4;margin-top:4px;border-radius:2px}
+  .ap-item{font-size:13px;color:var(--fg-dim);line-height:1.5;padding:6px 8px;
+    background:var(--panel-2);border:1px solid var(--line)}
+  .ap-item strong{color:var(--fg);display:block;font-size:15px;margin-bottom:3px}
+  .ap-tip{font-size:10px;color:var(--fg-faint);display:block;margin-top:2px;line-height:1.4}
+  .ap-bar-wrap{height:4px;background:var(--bg);margin-top:4px;border-radius:2px}
   .ap-bar{height:100%;border-radius:2px;transition:width .4s ease}
-  .ap-note{grid-column:1/-1;font-size:13px;color:#5a6b78;padding:6px 8px;
-    border-left:2px solid #b45309;background:#fbf3ea}
-  .twr-badge{display:inline-block;font-size:12px;padding:1px 7px;margin-left:4px;
-    border:1px solid #a9d3e0;color:#0a7ea6;background:#eef6f9}
+  .ap-note{grid-column:1/-1;font-size:13px;color:var(--fg-dim);padding:6px 8px;
+    border-left:2px solid var(--warn);background:var(--warn-soft)}
 
   /* ── TABS ── */
-  #tabs{display:flex;gap:0;border-bottom:1px solid #d7dce1;
-    background:#eef1f4}
-  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:#5a6b78;
-    font-family:'Courier New',monospace;font-size:16px;letter-spacing:1.5px;padding:12px 20px;
+  #tabs{display:flex;gap:0;border-bottom:1px solid var(--line);
+    background:var(--panel-2)}
+  .tab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--fg-dim);
+    font-family:var(--mono);font-size:16px;letter-spacing:1.5px;padding:12px 20px;
     cursor:pointer;margin-bottom:-1px;transition:all .2s}
-  .tab:hover{color:#0a7ea6;background:rgba(10,126,166,.06)}
-  .tab.active{color:#0a7ea6;border-bottom:2px solid #0a7ea6;
-    background:#fff}
+  .tab:hover{color:var(--accent);background:var(--accent-soft)}
+  .tab.active{color:var(--accent);border-bottom:2px solid var(--accent);
+    background:var(--panel)}
   .tab-panel{display:none}
   .tab-panel.active{display:block}
 
   /* ── PHYSICS PANEL ── */
   .phy-presets{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-  .preset-btn{background:#fff;border:1px solid #c3cad1;color:#5a6b78;
-    font-family:'Courier New',monospace;font-size:15px;padding:7px 14px;cursor:pointer;
+  .preset-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--fg-dim);
+    font-family:var(--mono);font-size:15px;padding:7px 14px;cursor:pointer;
     letter-spacing:1px;transition:all .2s}
-  .preset-btn:hover{background:#eef6f9;color:#0a7ea6;border-color:#0a7ea6}
-  .preset-btn.active{border-color:#0a7ea6;color:#0a7ea6;background:#eef6f9}
+  .preset-btn:hover{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+  .preset-btn.active{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
   /* 2-column grid for physics sliders */
   .phy-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
   .phy-grid-full{grid-column:1/-1}
   .phy-row{display:flex;flex-direction:column;gap:3px;padding:7px 9px;
-    background:#fff;border:1px solid #e6e9ec}
-  .phy-row.idle-row{border-color:#e3ccb0;background:#fbf3ea}
+    background:var(--panel-2);border:1px solid var(--line)}
+  .phy-row.idle-row{border-color:var(--warn-dim);background:var(--warn-soft)}
   .phy-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
-  .phy-lbl{font-size:15px;color:#1c2733;flex:1}
-  .phy-lbl small{display:block;font-size:11px;color:#5a6b78;margin-top:1px}
-  .phy-val{font-size:15px;color:#0a7ea6;white-space:nowrap;min-width:58px;text-align:right;font-weight:bold}
-  .phy-row.idle-row .phy-val{color:#b45309}
-  .phy-slider{width:100%;accent-color:#0a7ea6;cursor:pointer;margin-top:1px}
-  .phy-row.idle-row .phy-slider{accent-color:#b45309}
-  .phy-section-idle{border-color:#e3ccb0!important;background:#fbf3ea!important}
-  .phy-section-idle .phy-lbl{color:#b45309}
-  .phy-section-idle .phy-val{color:#b45309}
+  .phy-lbl{font-size:15px;color:var(--fg);flex:1}
+  .phy-lbl small{display:block;font-size:11px;color:var(--fg-dim);margin-top:1px}
+  .phy-val{font-size:15px;color:var(--accent);white-space:nowrap;min-width:58px;text-align:right;font-weight:bold}
+  .phy-row.idle-row .phy-val{color:var(--warn)}
+  .phy-slider{width:100%;accent-color:var(--accent);cursor:pointer;margin-top:1px}
+  .phy-row.idle-row .phy-slider{accent-color:var(--warn)}
 
   /* ── CRASH FLASH ── */
   #crash-flash{position:fixed;inset:0;pointer-events:none;z-index:50;opacity:0;
@@ -242,28 +336,40 @@
     transition:opacity .35s ease-out}
   #crash-flash.show{opacity:1;transition:opacity .04s}
 
-  /* ── SOUND / FULLSCREEN BUTTONS ── */
-  #sound-btn,#fullscreen-btn{background:rgba(5,14,30,.85);border:1px solid rgba(0,229,255,.4);color:#00e5ff;
-    font-family:'Courier New',monospace;font-size:10px;padding:6px 14px;cursor:pointer;
+  /* ── HUD BUTTONS ── */
+  #sound-btn,#fullscreen-btn,#reset-btn-hud{
+    background:rgba(5,14,30,.85);border:1px solid var(--accent-dim);color:var(--accent);
+    font-family:var(--mono);font-size:10px;padding:6px 14px;cursor:pointer;
     letter-spacing:1px;transition:all .2s}
-  #sound-btn:hover,#fullscreen-btn:hover{background:rgba(0,229,255,.12);border-color:#00e5ff;
+  #sound-btn:hover,#fullscreen-btn:hover,#reset-btn-hud:hover{
+    background:var(--accent-soft);border-color:var(--accent);
     box-shadow:0 0 16px rgba(0,229,255,.2)}
   #fullscreen-btn{font-size:14px;line-height:1}
+  /* Touch-only shortcut for R, which doesn't exist on a phone. Mode switching
+     doesn't need a duplicate here — the mode badge itself relocates to
+     bottom-center when the virtual sticks are up (see body.sticks below). */
+  #reset-btn-hud{display:none}
+  body.touch #reset-btn-hud{display:block}
 
   /* ── PROGRESSIVE DISCLOSURE (advanced sections) ── */
-  .adv-toggle{display:block;width:100%;text-align:left;background:#eef1f4;
-    border:1px solid #d7dce1;color:#5a6b78;font-family:'Courier New',monospace;
+  .adv-toggle{display:block;width:100%;text-align:left;background:var(--panel-2);
+    border:1px solid var(--line);color:var(--fg-dim);font-family:var(--mono);
     font-size:15px;letter-spacing:1px;padding:11px 12px;cursor:pointer;margin-top:14px;
     transition:all .2s}
-  .adv-toggle:hover{color:#0a7ea6;border-color:#a9d3e0;background:#eef6f9}
-  .adv-toggle.open{color:#0a7ea6;border-color:#a9d3e0}
+  .adv-toggle:hover{color:var(--accent);border-color:var(--accent-dim);background:var(--panel-3)}
+  .adv-toggle.open{color:var(--accent);border-color:var(--accent-dim)}
   .adv-section{display:none;margin-top:4px}
   .adv-section.open{display:block}
 
-  #preset-desc{font-size:14px;color:#5a6b78;padding:9px 10px;margin-bottom:4px;
-    background:#eef6f9;border-left:2px solid #0a7ea6;line-height:1.5}
+  #preset-desc{font-size:14px;color:var(--fg-dim);padding:9px 10px;margin-bottom:4px;
+    background:var(--panel-2);border-left:2px solid var(--accent);line-height:1.5}
 
   .table-scroll{overflow-x:auto}
+
+  /* ── FATAL LOAD ERROR (three.js CDN unreachable) ── */
+  #load-error{max-width:460px;padding:0 20px;text-align:center;color:var(--fg-dim);
+    font-size:13px;line-height:1.7}
+  #load-error h2{font-size:15px;letter-spacing:3px;color:var(--danger);margin-bottom:12px}
 
   /* ── RESPONSIVE / MOBILE ── */
   @media (max-width:640px){
@@ -293,9 +399,24 @@
     #tele{font-size:11px}
     #gps{font-size:10px}
     #gate-hud{font-size:12px;padding:3px 10px}
+    #lap-time{font-size:18px}
     #hud-btn-row{gap:6px}
     #hud-btn-row button{padding:6px 10px}
     .btn-label{display:none}
+    .tstick{width:112px;height:112px}
+    .tknob{width:40px;height:40px;margin:-20px 0 0 -20px}
+  }
+
+  /* When the virtual sticks are showing they own the bottom corners, so the
+     badge/buttons/ADI move out from under the player's thumbs. The gap between
+     the two sticks is the only free space left along the bottom edge. */
+  body.sticks #hud-btn-row{bottom:auto;top:34px;right:12px}
+  body.sticks .mode-badge{bottom:14px;left:50%;transform:translateX(-50%)}
+  body.sticks #adi-wrap{bottom:auto;top:74px;right:12px}
+  body.sticks #thr-bar{display:none}
+  body.sticks #help{display:none}   /* keybinds are irrelevant when flying by touch */
+  @media (max-height:480px){
+    body.sticks #adi-wrap{display:none}
   }
 </style>
 </head>
@@ -334,11 +455,11 @@
       </div>
     </div>
     <div class="splash-box" style="display:flex;align-items:center;justify-content:center;
-      border-color:rgba(255,109,0,.15);background:rgba(255,109,0,.03)">
+      border-color:var(--warn-dim);background:var(--warn-soft)">
       <div style="text-align:center">
-        <div style="font-size:9px;color:#ff6d00;letter-spacing:2px;margin-bottom:8px">CONTROLLER</div>
-        <div style="font-size:10px;color:#8abfcc">Mode 2 by default</div>
-        <div style="font-size:9px;color:#6a9aaa;margin-top:4px">Auto-detected · configurable</div>
+        <div style="font-size:9px;color:var(--warn);letter-spacing:2px;margin-bottom:8px">CONTROLLER</div>
+        <div style="font-size:10px;color:var(--fg-dim)">Mode 2 by default</div>
+        <div style="font-size:9px;color:var(--fg-faint);margin-top:4px">Auto-detected · configurable</div>
       </div>
     </div>
   </div>
@@ -365,20 +486,44 @@
     <line x1="27" y1="20" x2="38" y2="20" stroke="#00e5ff" stroke-width="1" opacity=".35"/>
   </svg>
   <div id="thr-bar"><div id="thr-fill"></div></div>
-  <div id="gate-hud">GATE <span id="gnum">0</span> / <span id="gtot">0</span></div>
+  <div id="gate-hud">GATE <span id="gnum">1</span> / <span id="gtot">0</span> · LAP <span id="lapnum">1</span></div>
+
+  <!-- Lap timing -->
+  <div id="lap-hud">
+    <div id="lap-time">--:--.---</div>
+    <div id="lap-sub">
+      <span id="lap-best">BEST --:--.---</span>
+      <span id="lap-delta"></span>
+    </div>
+  </div>
+
   <div class="mode-badge" title="Click to switch flight mode">ACRO MODE</div>
-  <div id="help">SPACE/SHIFT Throttle · WS Pitch · AD Roll · QE Yaw · ↑↓ Cam tilt · ←→ FOV · M Config · R Reset</div>
+  <div id="help">SPACE/SHIFT Throttle · WS Pitch · AD Roll · QE Yaw · ↑↓ Cam tilt · ←→ FOV · M Config · R Reset · ESC Close</div>
   <div id="hud-btn-row">
+    <button id="reset-btn-hud" title="Reset run">↺</button>
     <button id="sound-btn" title="Mute/unmute engine sound">🔊</button>
     <button id="fullscreen-btn" title="Toggle fullscreen">⤢</button>
     <button id="map-btn">⚙ <span class="btn-label">SETTINGS</span></button>
   </div>
 
+  <!-- Crash banner + respawn countdown -->
+  <div id="crash-banner">
+    <div id="crash-title">💥 CRASH</div>
+    <div id="crash-sub">RESPAWNING</div>
+    <div id="crash-meter"><div id="crash-meter-fill"></div></div>
+  </div>
+
   <!-- Attitude Indicator -->
   <div id="adi-wrap">
-    <canvas id="adi" width="82" height="82"></canvas>
+    <canvas id="adi"></canvas>
     <div id="adi-angles"><span id="adi-roll">R 0°</span> <span id="adi-pitch">P 0°</span></div>
     <div id="adi-label">ATT</div>
+  </div>
+
+  <!-- Virtual sticks (touch devices) -->
+  <div id="touch-controls">
+    <div class="tstick" id="tstick-l"><span class="tstick-lbl">THR · YAW</span><div class="tknob" id="tknob-l"></div></div>
+    <div class="tstick" id="tstick-r"><span class="tstick-lbl">PITCH · ROLL</span><div class="tknob" id="tknob-r"></div></div>
   </div>
 </div>
 
@@ -390,20 +535,20 @@
 
 <!-- MAPPING MODAL -->
 <div id="map-modal">
-<div id="map-card">
+<div id="map-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="modal-header">
-    <h2>⚙ SETTINGS</h2>
+    <h2 id="settings-title">⚙ SETTINGS</h2>
   </div>
 
   <!-- Tabs -->
-  <div id="tabs">
-    <button class="tab active" data-tab="controller">CONTROLLER</button>
-    <button class="tab" data-tab="physics">PHYSICS</button>
-    <button class="tab" data-tab="world">GENERAL</button>
+  <div id="tabs" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-controller" data-tab="controller">CONTROLLER</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-physics" data-tab="physics">PHYSICS</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="tab-world" data-tab="world">GENERAL</button>
   </div>
 
   <!-- ── TAB: CONTROLLER ── -->
-  <div class="tab-panel active" id="tab-controller">
+  <div class="tab-panel active" id="tab-controller" role="tabpanel">
   <div class="modal-body">
 
     <!-- Mode 2 compact reference -->
@@ -421,17 +566,38 @@
       </div>
     </div>
 
-    <div class="sec-title" style="margin-top:14px">QUICK SETUP</div>
+    <div class="sec-title" style="margin-top:14px">QUICK SETUP
+      <button class="info-btn" type="button" data-hint="hint-quicksetup"
+              aria-controls="hint-quicksetup" aria-expanded="false"
+              aria-label="About quick setup" title="What does this do?">i</button></div>
     <div id="wiz-row">
       <button class="btn-g" id="wiz-btn">🔍 AUTO-DETECT ALL</button>
       <span id="wiz-status"></span>
     </div>
-    <p style="font-size:14px;color:#5a6b78;margin-bottom:8px;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+    <p class="hint" id="hint-quicksetup">
       ► Connect your controller and press the button. Move each stick to full deflection when prompted — the rest (axis, inversion) is detected automatically.
     </p>
     <div id="no-gp" style="display:none">⚠ Connect a controller first</div>
 
-    <div class="sec-title" style="margin-top:14px">CAMERA & VIEW<small style="font-weight:normal;text-transform:none;letter-spacing:0;color:#8b98a3;margin-left:6px">no keyboard needed — works on mobile</small></div>
+    <div class="sec-title" style="margin-top:14px">TOUCH CONTROLS
+      <button class="info-btn" type="button" data-hint="hint-touch"
+              aria-controls="hint-touch" aria-expanded="false"
+              aria-label="About touch controls" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
+        Virtual sticks
+        <select id="touch-select" class="gen-select">
+          <option value="auto">AUTO (touch devices)</option>
+          <option value="on">ALWAYS ON</option>
+          <option value="off">OFF</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint" id="hint-touch">
+      ► Two on-screen sticks laid out like Mode 2 — left is throttle (self-latching, it stays where you leave it) plus yaw, right is pitch/roll and springs back to centre. AUTO shows them on touch screens only.
+    </p>
+
+    <div class="sec-title" style="margin-top:14px">CAMERA & VIEW<small style="font-weight:normal;text-transform:none;letter-spacing:0;color:var(--fg-faint);margin-left:6px">no keyboard needed — works on mobile</small></div>
     <div class="phy-grid" style="margin-bottom:10px">
       <div class="phy-row">
         <div class="phy-top">
@@ -484,7 +650,7 @@
   </div>
 
   <!-- ── TAB: PHYSICS ── -->
-  <div class="tab-panel" id="tab-physics">
+  <div class="tab-panel" id="tab-physics" role="tabpanel">
   <div class="modal-body">
 
     <div class="sec-title" style="margin-top:6px">PRESETS</div>
@@ -574,44 +740,115 @@
   </div>
 
   <!-- ── TAB: GENERAL ── -->
-  <div class="tab-panel" id="tab-world">
+  <div class="tab-panel" id="tab-world" role="tabpanel">
   <div class="modal-body">
 
-    <div class="sec-title" style="margin-top:6px">WORLD GENERATION</div>
-    <div id="world-row" style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+    <div class="sec-title" style="margin-top:6px">THEME
+      <button class="info-btn" type="button" data-hint="hint-theme"
+              aria-controls="hint-theme" aria-expanded="false"
+              aria-label="About the visual theme" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
+        Visual theme
+        <select id="theme-select" class="gen-select">
+          <option value="day">☀ DAY</option>
+          <option value="night">🌙 NIGHT (neon race)</option>
+        </select>
+      </label>
+    </div>
+    <p class="hint" id="hint-theme">
+      ► NIGHT swaps in a dark track with neon-lit glowing gates, closer to a real night-time FPV race — lighting is tuned to stay readable even in the dark. Trees default to off in this theme (flip "Show trees" below if you want them back), and each theme remembers that choice separately. Switches instantly.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">GRAPHICS QUALITY
+      <button class="info-btn" type="button" data-hint="hint-quality"
+              aria-controls="hint-quality" aria-expanded="false"
+              aria-label="About graphics quality" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
+        Quality
+        <select id="quality-select" class="gen-select">
+          <option value="low">LOW — no shadows, 1× pixels</option>
+          <option value="medium">MEDIUM — soft shadows, 1.5× pixels</option>
+          <option value="high">HIGH — full shadows, 2× pixels</option>
+        </select>
+      </label>
+      <span id="quality-note" style="font-size:12px;color:var(--fg-faint)"></span>
+    </div>
+    <p class="hint" id="hint-quality">
+      ► Drives render resolution, antialiasing and the shadow map together. Drop to LOW on a phone or an integrated GPU if the frame rate stutters — it costs shadows but roughly halves the work per frame. Defaults to MEDIUM on touch devices, HIGH on desktop.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">LAP TIMING
+      <button class="info-btn" type="button" data-hint="hint-laptiming"
+              aria-controls="hint-laptiming" aria-expanded="false"
+              aria-label="About lap timing" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <span style="font-size:14px;color:var(--fg)">Best lap: <strong id="best-lap-disp" style="color:var(--accent)">—</strong></span>
+      <button class="btn-g" id="clear-best-btn" style="font-size:13px;padding:8px 14px">✕ CLEAR BEST</button>
+    </div>
+    <p class="hint" id="hint-laptiming">
+      ► The timer starts when you cross the first gate and posts a lap each time you complete all gates in order. A lap in which you crash is marked in red and can't set a new best — the best time and the running +/- delta persist across sessions.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">WORLD GENERATION
+      <button class="info-btn" type="button" data-hint="hint-world"
+              aria-controls="hint-world" aria-expanded="false"
+              aria-label="About world generation" title="What does this do?">i</button></div>
+    <div id="world-row" class="chk-row">
+      <label class="chk-lbl">
         <input type="checkbox" class="inv-chk" id="randomize-toggle" checked>
         Randomize world on every reset
       </label>
       <button class="btn-g" id="randomize-btn" style="display:none;font-size:13px;padding:8px 14px">🔀 RANDOMIZE NOW</button>
     </div>
-    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+    <p class="hint" id="hint-world">
       ► When on, pressing R reshuffles gates and trees along with your position, like it always has. Turn it off to keep the same layout — pressing R will only reset your position, and you can reshuffle the layout manually with the button.
     </p>
 
-    <div class="sec-title" style="margin-top:16px">FPV HUD OVERLAY</div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+    <div class="sec-title" style="margin-top:16px">FPV HUD OVERLAY
+      <button class="info-btn" type="button" data-hint="hint-fpvhud"
+              aria-controls="hint-fpvhud" aria-expanded="false"
+              aria-label="About the FPV HUD overlay" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
         <input type="checkbox" class="inv-chk" id="fpvhud-toggle" checked>
         Show attitude HUD (pitch / roll)
       </label>
     </div>
-    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+    <p class="hint" id="hint-fpvhud">
       ► Draws a horizon bar across the centre of the view that tilts with roll and slides with pitch, flanked by two vertical gauges whose dots track the current pitch and roll angles. Turn it off for a clean, uncluttered FPV feed.
     </p>
 
-    <div class="sec-title" style="margin-top:16px">COLLISIONS</div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+    <div class="sec-title" style="margin-top:16px">SCENERY
+      <button class="info-btn" type="button" data-hint="hint-scenery"
+              aria-controls="hint-scenery" aria-expanded="false"
+              aria-label="About scenery" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
+        <input type="checkbox" class="inv-chk" id="show-trees-toggle" checked>
+        Show trees
+      </label>
+    </div>
+    <p class="hint" id="hint-scenery">
+      ► Turns the trees dotted around the map on or off. Hidden trees never cause a collision, regardless of the "Collide with trees" setting below.
+    </p>
+
+    <div class="sec-title" style="margin-top:16px">COLLISIONS
+      <button class="info-btn" type="button" data-hint="hint-collisions"
+              aria-controls="hint-collisions" aria-expanded="false"
+              aria-label="About collisions" title="What does this do?">i</button></div>
+    <div class="chk-row">
+      <label class="chk-lbl">
         <input type="checkbox" class="inv-chk" id="collide-gates-toggle" checked>
         Collide with gates
       </label>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:#1c2733">
+      <label class="chk-lbl">
         <input type="checkbox" class="inv-chk" id="collide-trees-toggle" checked>
         Collide with trees
       </label>
     </div>
-    <p style="font-size:13px;color:#5a6b78;padding:8px 9px;background:#eef6f9;border:1px solid #d7e8ee">
+    <p class="hint" id="hint-collisions">
       ► When enabled, touching a gate's frame/pole or a tree triggers a crash. Turn either off to fly straight through that obstacle type — handy for practicing lines without being punished for clipping scenery.
     </p>
 
@@ -620,7 +857,7 @@
 
   <div id="map-footer">
     <div class="footer-left">
-      <span id="save-status">REAL-TIME CHANGES</span>
+      <span id="save-status">AUTOSAVED</span>
       <span id="save-ts"></span>
     </div>
     <div class="footer-btns">
@@ -632,9 +869,58 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
 <script>
 'use strict';
+
+// ═══════════════════════════════════════════════
+//  BOOT GUARD — three.js comes from a CDN, so a blocked/offline
+//  load must say so instead of leaving a black screen behind the
+//  splash when the player hits FLY.
+// ═══════════════════════════════════════════════
+if(typeof THREE==='undefined'){
+  document.getElementById('splash').innerHTML=
+    '<div id="load-error"><h2>⚠ 3D LIBRARY UNAVAILABLE</h2>'+
+    '<p>The three.js runtime could not be downloaded, so the simulator cannot start.</p>'+
+    '<p style="margin-top:10px">Check your internet connection (or any ad/script blocker) and reload the page.</p></div>';
+  throw new Error('three.js failed to load');
+}
+
+// ═══════════════════════════════════════════════
+//  STORAGE — every persisted setting goes through here. localStorage
+//  throws in private-mode Safari and when cookies are blocked, so all
+//  access is guarded once, in one place, instead of at each call site.
+// ═══════════════════════════════════════════════
+const KEYS={
+  map:'fpv_map', phy:'fpv_phy', theme:'fpv_theme', trees:'fpv_show_trees_',
+  randomize:'fpv_world_randomize', hudOverlay:'fpv_hud_overlay',
+  collideGates:'fpv_collide_gates', collideTrees:'fpv_collide_trees',
+  flightMode:'fpv_flight_mode', ctrlAdv:'fpv_ui_controller_adv', phyAdv:'fpv_ui_physics_adv',
+  hints:'fpv_ui_hints',
+  bestLap:'fpv_best_lap', quality:'fpv_quality', touchMode:'fpv_touch_mode',
+  camTilt:'fpv_cam_tilt', fov:'fpv_fov',
+};
+
+const store={
+  get(key,fallback=null){
+    try{ const v=localStorage.getItem(key); return v===null?fallback:v; }catch(e){ return fallback; }
+  },
+  set(key,value){
+    try{ localStorage.setItem(key,String(value)); return true; }catch(e){ return false; }
+  },
+  remove(key){ try{ localStorage.removeItem(key); }catch(e){} },
+  getBool(key,fallback){ const v=store.get(key); return v===null?fallback:v==='1'; },
+  setBool(key,value){ return store.set(key, value?'1':'0'); },
+  getNum(key,fallback){ const v=parseFloat(store.get(key)); return Number.isFinite(v)?v:fallback; },
+  getJSON(key,fallback=null){
+    const v=store.get(key);
+    if(v===null) return fallback;
+    try{ return JSON.parse(v); }catch(e){ return fallback; }
+  },
+  setJSON(key,value){
+    try{ return store.set(key, JSON.stringify(value)); }catch(e){ return false; }
+  },
+};
 
 // ═══════════════════════════════════════════════
 //  MAPPING — persistent config
@@ -654,17 +940,18 @@ const DEFAULT_MAP = {
   deadband: 0.05,
 };
 
-let axisMap = JSON.parse(JSON.stringify(DEFAULT_MAP));
-try{ const s=localStorage.getItem('fpv_map'); if(s) axisMap=JSON.parse(s); }catch(e){}
-function saveMap(){ try{ localStorage.setItem('fpv_map', JSON.stringify(axisMap)); }catch(e){} }
+const axisMap = Object.assign(JSON.parse(JSON.stringify(DEFAULT_MAP)), store.getJSON(KEYS.map, {}));
+function saveMap(){ store.setJSON(KEYS.map, axisMap); }
 
 // ═══════════════════════════════════════════════
 //  PHYSICS — mutable config + presets
 // ═══════════════════════════════════════════════
 const G=9.81, MASS=0.5;
-const GATE_R=2.5, N_GATES=12;
-let camTiltDeg = 20;
-let fovDeg = 85;
+const GATE_R=3, N_GATES=12; // gate ring radius — 20% bigger than the original 2.5
+// Camera tilt/FOV are exposed as settings, so they persist like every other setting.
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+let camTiltDeg = clamp(store.getNum(KEYS.camTilt,20), 0, 90);
+let fovDeg     = clamp(store.getNum(KEYS.fov,85), 50, 120);
 
 const PHY_KEYS = ['hoverPct','rateDeg','yawDeg','omegaR','linDrag','angDrag','idleThrottle','hoverStick'];
 
@@ -684,26 +971,18 @@ const PHY_DEFAULT = { hoverPct:0.19, rateDeg:620, yawDeg:400, omegaR:41, linDrag
 
 // Load saved physics or fall back to the tuned default
 const phy = Object.assign({}, PHY_DEFAULT);
-let savedPhyLabel = 'default';
 (function loadPhy(){
-  try{
-    const s = localStorage.getItem('fpv_phy');
-    if(!s) return;
-    const saved = JSON.parse(s);
-    PHY_KEYS.forEach(k=>{ if(saved[k]!==undefined) phy[k]=saved[k]; });
-    savedPhyLabel = saved._label || 'custom';
-  }catch(e){}
+  const saved = store.getJSON(KEYS.phy);
+  if(!saved) return;
+  PHY_KEYS.forEach(k=>{ if(typeof saved[k]==='number') phy[k]=saved[k]; });
 })();
 
 function savePhy(label){
-  try{
-    const toSave = {};
-    PHY_KEYS.forEach(k=>toSave[k]=phy[k]);
-    toSave._label = label || detectPresetName() || 'custom';
-    toSave._ts = Date.now();
-    localStorage.setItem('fpv_phy', JSON.stringify(toSave));
-    return toSave._ts;
-  }catch(e){ return null; }
+  const toSave = {};
+  PHY_KEYS.forEach(k=>toSave[k]=phy[k]);
+  toSave._label = label || detectPresetName() || 'custom';
+  toSave._ts = Date.now();
+  return store.setJSON(KEYS.phy, toSave) ? toSave._ts : null;
 }
 
 function detectPresetName(){
@@ -714,33 +993,85 @@ function detectPresetName(){
 }
 
 function resetPhy(){
-  try{ localStorage.removeItem('fpv_phy'); }catch(e){}
+  store.remove(KEYS.phy);
   Object.assign(phy, PHY_DEFAULT);
+  recomputePhyDerived();
   syncPhyUI();
   const preset=detectPresetName();
   if(preset) markPreset(preset);
   else { document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active')); updatePresetDesc(null); }
-  showSaveToast('CONFIG RESET', '#ff6d00');
+  showSaveToast('CONFIG RESET', '#ffb830');
 }
 
-function maxThr(){ return MASS*G/phy.hoverPct; }
-function ratePit(){ return phy.rateDeg*Math.PI/180; }
-function rateRol(){ return phy.rateDeg*Math.PI/180; }
-function rateYaw(){ return phy.yawDeg*Math.PI/180; }
-function throttleP(){
-  const y0=clamp((phy.hoverPct-phy.idleThrottle)/(1-phy.idleThrottle),1e-4,1-1e-4);
-  return Math.log(y0)/Math.log(phy.hoverStick);
+// ── Derived physics values ──
+// These are pure functions of the slider values but were being recomputed on
+// every physics step (throttleP() alone ran two Math.log calls). With the fixed
+// timestep below running up to 8 steps per frame that adds up, so they are
+// cached here and refreshed whenever a slider, preset or reset changes `phy`.
+const derived={ maxThr:0, throttleP:1, ratePitch:0, rateRoll:0, rateYaw:0 };
+function recomputePhyDerived(){
+  derived.maxThr = MASS*G/phy.hoverPct;
+  const y0 = clamp((phy.hoverPct-phy.idleThrottle)/(1-phy.idleThrottle),1e-4,1-1e-4);
+  derived.throttleP = Math.log(y0)/Math.log(phy.hoverStick);
+  derived.ratePitch = derived.rateRoll = phy.rateDeg*Math.PI/180;
+  derived.rateYaw   = phy.yawDeg*Math.PI/180;
 }
+
+// ═══════════════════════════════════════════════
+//  DOM CACHE — every element touched from the render loop is resolved
+//  once here. updateHUD alone used to run seven getElementById calls per
+//  frame, plus two more for the ADI readouts.
+// ═══════════════════════════════════════════════
+const el={};
+'spd alt thrp tilt-deg fov-disp thr-fill gnum gtot lapnum gpname adi adi-roll adi-pitch \
+fpv-hud crash-flash crash-banner crash-meter-fill crash-title toast help splash btn-start \
+lap-time lap-best lap-delta best-lap-disp map-modal map-card save-status save-ts wiz-status \
+wiz-btn no-gp db-slider db-disp axes-grid ch-body ap-grid preset-desc sound-btn fullscreen-btn \
+cfg-tilt-slider cfg-tilt-disp cfg-fov-slider cfg-fov-disp touch-controls tstick-l tstick-r \
+tknob-l tknob-r quality-select quality-note touch-select theme-select reset-btn save-btn \
+close-btn map-btn randomize-btn clear-best-btn reset-btn-hud'
+  .split(/\s+/).forEach(id=>{
+    // camelCase alias so `el.thrFill` reads better than el['thr-fill']
+    const node=document.getElementById(id);
+    el[id]=node;
+    el[id.replace(/-(\w)/g,(_,c)=>c.toUpperCase())]=node;
+  });
 
 // ═══════════════════════════════════════════════
 //  THREE.JS
 // ═══════════════════════════════════════════════
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// Quality tiers drive resolution, antialiasing and shadows together. `antialias`
+// is baked into the WebGL context at construction, so it is read before the
+// renderer exists and a change requires a reload (the UI says so).
+const QUALITY_TIERS={
+  low:    { pixelRatio:1,   antialias:false, shadows:false, shadowMap:1024 },
+  medium: { pixelRatio:1.5, antialias:true,  shadows:true,  shadowMap:1024 },
+  high:   { pixelRatio:2,   antialias:true,  shadows:true,  shadowMap:2048 },
+};
+const isCoarsePointer = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+let quality = store.get(KEYS.quality) || (isCoarsePointer?'medium':'high');
+if(!QUALITY_TIERS[quality]) quality='high';
+
+const renderer = new THREE.WebGLRenderer({antialias:QUALITY_TIERS[quality].antialias,
+                                          powerPreference:'high-performance'});
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
+
+// Turning shadowMap.enabled off suppresses the whole shadow pass, so the
+// per-mesh castShadow flags set at build time can stay exactly as they are.
+function applyQuality(name){
+  const q=QUALITY_TIERS[name]||QUALITY_TIERS.high;
+  renderer.setPixelRatio(Math.min(devicePixelRatio,q.pixelRatio));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled=q.shadows;
+  renderer.shadowMap.needsUpdate=true;
+  sun.castShadow=q.shadows;
+  if(sun.shadow.mapSize.width!==q.shadowMap){
+    sun.shadow.mapSize.set(q.shadowMap,q.shadowMap);
+    if(sun.shadow.map){ sun.shadow.map.dispose(); sun.shadow.map=null; } // forces a rebuild at the new size
+  }
+}
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x5aa0cc);
@@ -750,7 +1081,7 @@ const cam=new THREE.PerspectiveCamera(fovDeg,innerWidth/innerHeight,.05,1000);
 const Q_TILT=new THREE.Quaternion();
 const _TILT_AXIS=new THREE.Vector3(1,0,0);
 
-scene.add(new THREE.AmbientLight(0xffffff,.60));
+const ambientLight=new THREE.AmbientLight(0xffffff,.60); scene.add(ambientLight);
 const sun=new THREE.DirectionalLight(0xfff5dd,1.15);
 sun.position.set(80,180,70); sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
@@ -763,20 +1094,80 @@ const gnd=new THREE.Mesh(new THREE.PlaneGeometry(700,700),new THREE.MeshLambertM
 gnd.rotation.x=-Math.PI/2; gnd.receiveShadow=true; scene.add(gnd);
 const grid=new THREE.GridHelper(500,100,0x3a5626,0x3a5626);
 grid.material.opacity=.3; grid.material.transparent=true; scene.add(grid);
+const _gridColor=new THREE.Color();
+function recolorGrid(hex){
+  _gridColor.set(hex);
+  const c=grid.geometry.attributes.color;
+  for(let i=0;i<c.count;i++) c.setXYZ(i,_gridColor.r,_gridColor.g,_gridColor.b);
+  c.needsUpdate=true;
+}
 const rw=new THREE.Mesh(new THREE.PlaneGeometry(3,50),new THREE.MeshLambertMaterial({color:0x888888}));
 rw.rotation.x=-Math.PI/2; rw.position.y=.01; scene.add(rw);
 const sl=new THREE.Mesh(new THREE.BoxGeometry(3,.15,.15),new THREE.MeshLambertMaterial({color:0xffffff}));
 sl.position.y=.08; scene.add(sl);
 
+// ── Resource disposal ──
+// Nothing here used to be disposed, so every world rebuild (R with randomize on,
+// or RANDOMIZE NOW) orphaned its geometries, materials and canvas textures on the
+// GPU. Anything removed from the scene now goes through here first.
+// THREE.Texture has no `userData` in r128 (it was added to textures later), so
+// the flag is read and written through these helpers rather than assumed.
+function isShared(o){ return !!(o && o.userData && o.userData.shared); }
+
+function disposeObject(obj){
+  obj.traverse(o=>{
+    if(o.geometry && !isShared(o.geometry)) o.geometry.dispose();
+    const mats=Array.isArray(o.material)?o.material:(o.material?[o.material]:[]);
+    for(const m of mats){
+      if(isShared(m)) continue;
+      if(m.map && !isShared(m.map)) m.map.dispose();
+      m.dispose();
+    }
+  });
+}
+// Geometries/materials/textures reused across rebuilds are flagged so disposeObject skips them.
+function markShared(...items){
+  items.forEach(i=>{ if(i){ if(!i.userData) i.userData={}; i.userData.shared=true; } });
+  return items[0];
+}
+
 // Trees — kept clear of gates, but allowed close to the spawn/runway area
 const TREE_MIN_FROM_GATE=7, TREE_MIN_FROM_SPAWN=6, N_TREES=100, TREE_SIZE_MULT=1.3;
-const treeGroups=[];
-const treeColliders=[]; // {x,z,wScale,hScale} — mirrors treeGroups, used by checkTreeCrash
+const treeColliders=[]; // {x,z,wScale,hScale} — mirrors the instance list, used by checkTreeCrash
 const tG=new THREE.CylinderGeometry(.13,.2,2.6,5), tM=new THREE.MeshLambertMaterial({color:0x6b4226});
 const lG=new THREE.ConeGeometry(1.3,5,6), lM=new THREE.MeshLambertMaterial({color:0x2a6629});
+markShared(tG,tM,lG,lM);
+
+// Two InstancedMeshes instead of 100 Groups × 2 Meshes: 200 draw calls (400 with
+// the shadow pass) collapse to 2. Geometry/material were already shared, so the
+// only change is where the per-tree transform lives.
+const trunkMesh=new THREE.InstancedMesh(tG,tM,N_TREES);
+const foliageMesh=new THREE.InstancedMesh(lG,lM,N_TREES);
+[trunkMesh,foliageMesh].forEach(m=>{
+  m.castShadow=true;
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  m.frustumCulled=false; // instances span the whole map; the mesh bounds would cull wrongly
+  scene.add(m);
+});
+const _treeMat=new THREE.Matrix4(), _treePos=new THREE.Vector3(),
+      _treeQuat=new THREE.Quaternion(), _treeScl=new THREE.Vector3();
+
+// Theme — trees default on for DAY, off for NIGHT, but each theme remembers
+// its own "show trees" preference independently once the user touches it.
+let theme=store.get(KEYS.theme,'day');
+if(theme!=='day'&&theme!=='night') theme='day';
+
+const THEME_TREE_DEFAULTS={day:true, night:false};
+function loadShowTreesFor(themeName){
+  return store.getBool(KEYS.trees+themeName, THEME_TREE_DEFAULTS[themeName]);
+}
+let showTrees=loadShowTreesFor(theme);
+
+function applyTreeVisibility(){
+  trunkMesh.visible=foliageMesh.visible=showTrees;
+}
 
 function buildTrees(){
-  treeGroups.forEach(g=>scene.remove(g)); treeGroups.length=0;
   treeColliders.length=0;
   let placed=0, attempts=0;
   while(placed<N_TREES && attempts<4000){
@@ -787,18 +1178,25 @@ function buildTrees(){
     let blocked=false;
     for(const g of gates){ if(Math.hypot(x-g.pos.x,z-g.pos.z)<TREE_MIN_FROM_GATE){ blocked=true; break; } }
     if(blocked) continue;
-    const g=new THREE.Group();
-    const tr=new THREE.Mesh(tG,tM); tr.position.y=1.3; tr.castShadow=true;
-    const lf=new THREE.Mesh(lG,lM); lf.position.y=5.0; lf.castShadow=true;
-    g.add(tr,lf);
     const hScale=(0.6+Math.random()*1.1)*TREE_SIZE_MULT;   // height: wide variation
     const wScale=(0.85+Math.random()*0.3)*TREE_SIZE_MULT;  // width: kept narrow so trunks don't look absurd
-    g.scale.set(wScale,hScale,wScale);
-    g.position.set(x,0,z); scene.add(g);
-    treeGroups.push(g);
+    // The old code scaled a Group holding meshes at local y=1.3 / y=5.0, so each
+    // instance bakes that offset into its own translation to land identically.
+    _treeScl.set(wScale,hScale,wScale);
+    _treePos.set(x,1.3*hScale,z);
+    trunkMesh.setMatrixAt(placed,_treeMat.compose(_treePos,_treeQuat,_treeScl));
+    _treePos.set(x,5.0*hScale,z);
+    foliageMesh.setMatrixAt(placed,_treeMat.compose(_treePos,_treeQuat,_treeScl));
     treeColliders.push({x,z,wScale,hScale});
     placed++;
   }
+  // Any unfilled slots collapse to zero scale rather than rendering at the origin.
+  _treeScl.set(0,0,0); _treePos.set(0,0,0);
+  _treeMat.compose(_treePos,_treeQuat,_treeScl);
+  for(let i=placed;i<N_TREES;i++){ trunkMesh.setMatrixAt(i,_treeMat); foliageMesh.setMatrixAt(i,_treeMat); }
+  trunkMesh.count=foliageMesh.count=N_TREES;
+  trunkMesh.instanceMatrix.needsUpdate=foliageMesh.instanceMatrix.needsUpdate=true;
+  applyTreeVisibility();
 }
 
 // Circuit — square MultiGP-style racing gates
@@ -809,46 +1207,188 @@ const BAR_LEN=2*GATE_R+T_FRAME;
 const GEO_BAR_H=new THREE.BoxGeometry(BAR_LEN,T_FRAME,T_FRAME); // top/bottom bars
 const GEO_BAR_V=new THREE.BoxGeometry(T_FRAME,BAR_LEN,T_FRAME); // left/right bars
 const POST_R=0.09;
+markShared(GEO_BAR_H,GEO_BAR_V,MAT_POST);
+// Pole length only depends on the gate's altitude, so a unit-height cylinder
+// scaled per gate replaces the fresh CylinderGeometry the old code allocated
+// (and never freed) for every gate on every rebuild.
+const GEO_POLE=markShared(new THREE.CylinderGeometry(POST_R,POST_R,1,6));
 
-function numSprite(n){
+// Checkered "race gate" fabric look — a black/white check tinted by each gate's
+// state color (upcoming/next/passed), like the padded rings in real FPV circuits.
+function makeCheckerCanvas(){
+  const n=2, cell=16, cv=document.createElement('canvas'); cv.width=cv.height=n*cell;
+  const ctx=cv.getContext('2d');
+  for(let y=0;y<n;y++) for(let x=0;x<n;x++){
+    ctx.fillStyle=((x+y)%2===0)?'#ffffff':'#141414';
+    ctx.fillRect(x*cell,y*cell,cell,cell);
+  }
+  return cv;
+}
+const GATE_CHECKER_CANVAS=makeCheckerCanvas();
+const GATE_TEX_H=new THREE.CanvasTexture(GATE_CHECKER_CANVAS); // for top/bottom bars (long axis = x)
+GATE_TEX_H.wrapS=GATE_TEX_H.wrapT=THREE.RepeatWrapping; GATE_TEX_H.repeat.set(6,1);
+const GATE_TEX_V=new THREE.CanvasTexture(GATE_CHECKER_CANVAS); // for left/right bars (long axis = y)
+GATE_TEX_V.wrapS=GATE_TEX_V.wrapT=THREE.RepeatWrapping; GATE_TEX_V.repeat.set(1,6);
+markShared(GATE_TEX_H,GATE_TEX_V);
+
+function setGateColor(g,hex){
+  g.matH.color.set(hex); g.matV.color.set(hex);
+  g.matH.emissive.set(hex); g.matV.emissive.set(hex); // glow color in NIGHT theme, no-op in DAY (emissiveIntensity 0)
+  g.glowMatsH.forEach(m=>m.color.set(hex));
+  g.glowMatsV.forEach(m=>m.color.set(hex));
+  g.light.color.set(hex);
+}
+
+// Fake-bloom "neon tube" halo — two oversized, additive-blended, unlit copies
+// of each bar (tight bright layer + soft wide layer) so NIGHT gates read as
+// glowing light tubes rather than just a bright surface. Opacity is 0 (invisible)
+// in DAY and set by applyThemeVisuals() in NIGHT. Each layer is textured with a
+// soft gradient (opaque core fading to transparent edges) instead of a flat
+// alpha, so the halo blurs smoothly instead of showing hard box edges.
+const GLOW_LAYERS=[{scaleMul:1.8,opacityMul:1}, {scaleMul:3.6,opacityMul:.45}];
+
+function makeGlowGradientCanvas(){
+  const w=64,h=64, cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const ctx=cv.getContext('2d');
+  const grad=ctx.createLinearGradient(0,0,0,h);
+  grad.addColorStop(0,'rgba(255,255,255,0)');
+  grad.addColorStop(0.5,'rgba(255,255,255,1)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,w,h);
+  return cv;
+}
+const GLOW_GRAD_CANVAS=makeGlowGradientCanvas();
+// H-bars: front face maps U→length, V→cross-section, so the plain gradient (fades along V) is correct as-is.
+const GLOW_TEX_H=new THREE.CanvasTexture(GLOW_GRAD_CANVAS);
+// V-bars: front face maps U→cross-section, V→length, so rotate 90° to fade along U instead.
+const GLOW_TEX_V=new THREE.CanvasTexture(GLOW_GRAD_CANVAS);
+GLOW_TEX_V.center.set(0.5,0.5); GLOW_TEX_V.rotation=Math.PI/2;
+markShared(GLOW_TEX_H,GLOW_TEX_V);
+
+// Theme presets — DAY is the original bright/checkered look, NIGHT is a dark
+// track with the gates lit up like real neon/LED race gates. Ambient + moon
+// light are kept fairly bright even at night so the course stays readable.
+const THEME_DEFS={
+  day:{
+    sky:0x5aa0cc, fogColor:0x5aa0cc, fogDensity:.005,
+    ground:0x567a38, gridColor:0x3a5626, gridOpacity:.3,
+    runway:0x888888, centerline:0xffffff, centerlineEmissiveI:0,
+    ambientColor:0xffffff, ambientI:.60,
+    sunColor:0xfff5dd, sunI:1.15,
+    gateMap:true, gateEmissiveI:0, gateLightI:0, glowOpacity:0, nextColor:0xffff00
+  },
+  night:{
+    sky:0x050810, fogColor:0x050810, fogDensity:.004,
+    ground:0x3c4658, gridColor:0x3a6a90, gridOpacity:.25,
+    runway:0x272e3a, centerline:0xffffff, centerlineEmissiveI:1.2,
+    ambientColor:0x8aa8dd, ambientI:.72,
+    sunColor:0xbdd6ff, sunI:.65,
+    gateMap:false, gateEmissiveI:2.2, gateLightI:3, glowOpacity:.55, nextColor:0xff1a1a
+  }
+};
+
+function applyThemeVisuals(name){
+  const d=THEME_DEFS[name];
+  scene.background.set(d.sky);
+  scene.fog.color.set(d.fogColor); scene.fog.density=d.fogDensity;
+  gnd.material.color.set(d.ground);
+  rw.material.color.set(d.runway);
+  sl.material.color.set(d.centerline);
+  sl.material.emissive.set(d.centerline); sl.material.emissiveIntensity=d.centerlineEmissiveI;
+  // GridHelper colours live in its vertex attribute, so the whole helper was being
+  // rebuilt (and leaked) on every theme switch. Recolouring the buffer in place
+  // does the same job without touching the scene graph.
+  recolorGrid(d.gridColor);
+  grid.material.opacity=d.gridOpacity;
+  ambientLight.color.set(d.ambientColor); ambientLight.intensity=d.ambientI;
+  sun.color.set(d.sunColor); sun.intensity=d.sunI;
+  gates.forEach(g=>{
+    g.matH.map=d.gateMap?GATE_TEX_H:null; g.matH.emissiveIntensity=d.gateEmissiveI; g.matH.needsUpdate=true;
+    g.matV.map=d.gateMap?GATE_TEX_V:null; g.matV.emissiveIntensity=d.gateEmissiveI; g.matV.needsUpdate=true;
+    g.light.intensity=d.gateLightI;
+    g.glowMatsH.forEach((m,i)=>m.opacity=d.glowOpacity*GLOW_LAYERS[i].opacityMul);
+    g.glowMatsV.forEach((m,i)=>m.opacity=d.glowOpacity*GLOW_LAYERS[i].opacityMul);
+    // The halo is fully transparent in DAY, so the 8 oversized meshes per gate
+    // were still being submitted (and alpha-sorted) for nothing.
+    const glowOn=d.glowOpacity>0;
+    g.glowMeshes.forEach(m=>m.visible=glowOn);
+  });
+  if(gates.length) setGateColor(gates[nextGate%gates.length],d.nextColor); // re-tint the current target gate to this theme's color
+}
+
+// Gate-number sprites: only N_GATES distinct labels ever exist, so the canvas,
+// texture and material are built once per number and shared by every rebuild
+// rather than allocated (and abandoned) 12 at a time.
+const numMaterials=new Map();
+function numSpriteMaterial(n){
+  let mat=numMaterials.get(n);
+  if(mat) return mat;
   const cv=document.createElement('canvas'); cv.width=cv.height=64;
   const ctx=cv.getContext('2d');
-  ctx.fillStyle='rgba(0,0,0,0)'; ctx.fillRect(0,0,64,64);
   ctx.fillStyle='#fff'; ctx.font='bold 38px Arial';
   ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(n,32,32);
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
+  const tex=markShared(new THREE.CanvasTexture(cv));
+  mat=markShared(new THREE.SpriteMaterial({map:tex,depthTest:false}));
+  numMaterials.set(n,mat);
+  return mat;
+}
+function numSprite(n){
+  const s=new THREE.Sprite(numSpriteMaterial(n));
   s.scale.set(1.2,1.2,1); return s;
 }
 
+let nextGate=0; // declared before buildCircuit() runs — applyThemeVisuals() reads nextGate
+
 function buildCircuit(){
-  gates.forEach(g=>scene.remove(g.group)); gates.length=0;
+  gates.forEach(g=>{ scene.remove(g.group); disposeObject(g.group); }); gates.length=0;
   let angle=0;
   for(let i=0;i<N_GATES;i++){
     angle+=(Math.PI*2/N_GATES)*(0.7+Math.random()*0.6);
-    const r=18+Math.random()*26;
-    const px=Math.cos(angle)*r+(Math.random()-.5)*10;
-    const pz=Math.sin(angle)*r+(Math.random()-.5)*10;
-    const py=3+Math.random()*8;
+    const r=21.6+Math.random()*31.2; // placement radius — 20% wider than the original 18–44 range
+    const px=Math.cos(angle)*r+(Math.random()-.5)*12;
+    const pz=Math.sin(angle)*r+(Math.random()-.5)*12;
+    const py=3.6+Math.random()*9.6; // altitude range — also 20% taller
     const ry=angle+Math.PI/2+(Math.random()-.5)*0.45;
     const group=new THREE.Group();
-    const mat=new THREE.MeshLambertMaterial({color:i===0?0xffff00:0xff5000});
-    const top=new THREE.Mesh(GEO_BAR_H,mat); top.position.set(0, GATE_R,0);
-    const bot=new THREE.Mesh(GEO_BAR_H,mat); bot.position.set(0,-GATE_R,0);
-    const lft=new THREE.Mesh(GEO_BAR_V,mat); lft.position.set(-GATE_R,0,0);
-    const rgt=new THREE.Mesh(GEO_BAR_V,mat); rgt.position.set( GATE_R,0,0);
+    const gateColor=i===0?THEME_DEFS[theme].nextColor:0xff5000;
+    const matH=new THREE.MeshLambertMaterial({color:gateColor,map:GATE_TEX_H,emissive:gateColor,emissiveIntensity:0});
+    const matV=new THREE.MeshLambertMaterial({color:gateColor,map:GATE_TEX_V,emissive:gateColor,emissiveIntensity:0});
+    const top=new THREE.Mesh(GEO_BAR_H,matH); top.position.set(0, GATE_R,0);
+    const bot=new THREE.Mesh(GEO_BAR_H,matH); bot.position.set(0,-GATE_R,0);
+    const lft=new THREE.Mesh(GEO_BAR_V,matV); lft.position.set(-GATE_R,0,0);
+    const rgt=new THREE.Mesh(GEO_BAR_V,matV); rgt.position.set( GATE_R,0,0);
     [top,bot,lft,rgt].forEach(m=>{ m.castShadow=true; group.add(m); });
     const poleLen=py-GATE_R;
-    const pole=new THREE.Mesh(new THREE.CylinderGeometry(POST_R,POST_R,poleLen,6),MAT_POST);
+    const pole=new THREE.Mesh(GEO_POLE,MAT_POST);
+    pole.scale.y=poleLen;
     pole.position.set(0,-GATE_R-poleLen/2,0); pole.castShadow=true; group.add(pole);
     const ns=numSprite(i+1); ns.position.set(0,GATE_R+T_FRAME/2+0.55,0); group.add(ns);
+    const light=new THREE.PointLight(gateColor,0,9,2); group.add(light); // neon glow — intensity set by applyThemeVisuals
+    const glowMatsH=[], glowMatsV=[], glowMeshes=[];
+    GLOW_LAYERS.forEach(layer=>{
+      const gmH=new THREE.MeshBasicMaterial({color:gateColor,map:GLOW_TEX_H,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
+      const gmV=new THREE.MeshBasicMaterial({color:gateColor,map:GLOW_TEX_V,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
+      glowMatsH.push(gmH); glowMatsV.push(gmV);
+      const gTop=new THREE.Mesh(GEO_BAR_H,gmH); gTop.position.set(0,GATE_R,0); gTop.scale.set(1,layer.scaleMul,layer.scaleMul);
+      const gBot=new THREE.Mesh(GEO_BAR_H,gmH); gBot.position.set(0,-GATE_R,0); gBot.scale.set(1,layer.scaleMul,layer.scaleMul);
+      const gLft=new THREE.Mesh(GEO_BAR_V,gmV); gLft.position.set(-GATE_R,0,0); gLft.scale.set(layer.scaleMul,1,layer.scaleMul);
+      const gRgt=new THREE.Mesh(GEO_BAR_V,gmV); gRgt.position.set( GATE_R,0,0); gRgt.scale.set(layer.scaleMul,1,layer.scaleMul);
+      [gTop,gBot,gLft,gRgt].forEach(m=>{ group.add(m); glowMeshes.push(m); });
+    });
     group.position.set(px,py,pz); group.rotation.y=ry; scene.add(group);
-    gates.push({group,mat,pos:new THREE.Vector3(px,py,pz)});
+    // cos/sin of the gate yaw are needed for every collision test; caching them
+    // here keeps two trig calls per gate out of the physics step.
+    gates.push({group,matH,matV,light,glowMatsH,glowMatsV,glowMeshes,
+                pos:new THREE.Vector3(px,py,pz), cs:Math.cos(ry), sn:Math.sin(ry)});
   }
-  document.getElementById('gtot').textContent=N_GATES;
-  document.getElementById('gnum').textContent='0';
+  el.gtot.textContent=N_GATES;
   buildTrees();
+  applyThemeVisuals(theme);
+  // The gate/lap readout is refreshed by initHUDState() once the lap-timer
+  // state below has been declared.
 }
 buildCircuit();
+applyQuality(quality);
 
 // ═══════════════════════════════════════════════
 //  DRONE STATE
@@ -860,38 +1400,73 @@ const drone={
   omega:new THREE.Vector3(),
   thr:0, // current effective thrust (with motor spool-up delay)
 };
-let nextGate=0, gatesPassed=0;
 let crashState=null; // {t, cause} while the drone is crashed/falling after a collision
 const CRASH_RESPAWN_T=1.8;
 
-let collideGates=true;
-try{ const s=localStorage.getItem('fpv_collide_gates'); if(s!==null) collideGates=s==='1'; }catch(e){}
-let collideTrees=true;
-try{ const s=localStorage.getItem('fpv_collide_trees'); if(s!==null) collideTrees=s==='1'; }catch(e){}
+let collideGates=store.getBool(KEYS.collideGates,true);
+let collideTrees=store.getBool(KEYS.collideTrees,true);
 
-function resetDrone(){
-  drone.pos.set(0,1.5,0); drone.vel.set(0,0,0);
-  drone.quat.identity(); drone.omega.set(0,0,0);
+// ── Respawn vs. restart ──
+// These used to be one function, so any crash silently threw away the whole run.
+// respawnDrone() only restores flyable state; resetRun() is the explicit restart
+// bound to R and the HUD button.
+function respawnDrone(pos, quat){
+  drone.vel.set(0,0,0); drone.omega.set(0,0,0);
   drone.thr=phy.idleThrottle;
   crashState=null;
-  inp.throttle=0; nextGate=0; gatesPassed=0;
-  gates.forEach((g,i)=>g.mat.color.set(i===0?0xffff00:0xff5000));
-  document.getElementById('gnum').textContent='0';
+  inp.throttle=0;
+  if(pos) drone.pos.copy(pos); else drone.pos.set(0,1.5,0);
+  if(quat) drone.quat.copy(quat); else drone.quat.identity();
+  hideCrashBanner();
+}
+
+// Put the drone back just short of the gate it was heading for, facing it, so
+// clipping gate 11 of 12 costs a few seconds instead of the entire lap.
+const _respawnPos=new THREE.Vector3(), _respawnQuat=new THREE.Quaternion(),
+      _AXIS_Y_WORLD=new THREE.Vector3(0,1,0);
+function respawnAtCurrentGate(){
+  if(!gates.length){ respawnDrone(); return; }
+  const g=gates[nextGate%gates.length];
+  // 9 m back along the gate's own facing axis (local -Z), clear of the frame.
+  _respawnPos.set(g.sn*9, 0, g.cs*9).add(g.pos);
+  _respawnPos.y=Math.max(g.pos.y, 2.0);
+  const yaw=Math.atan2(g.pos.x-_respawnPos.x, g.pos.z-_respawnPos.z)+Math.PI;
+  _respawnQuat.setFromAxisAngle(_AXIS_Y_WORLD, yaw);
+  respawnDrone(_respawnPos,_respawnQuat);
+}
+
+function resetRun(){
+  respawnDrone();
+  leftStick.reset();   // drop the latched virtual throttle back to zero
+  nextGate=0;
+  gates.forEach((g,i)=>setGateColor(g,i===0?THEME_DEFS[theme].nextColor:0xff5000));
+  resetLapTimer();
+  updateGateHUD();
 }
 
 function flashCrash(){
-  const el=document.getElementById('crash-flash');
-  if(!el) return;
-  el.classList.add('show');
-  setTimeout(()=>el.classList.remove('show'),120);
+  const node=el.crashFlash;
+  if(!node) return;
+  node.classList.add('show');
+  setTimeout(()=>node.classList.remove('show'),120);
+}
+
+const CRASH_LABELS={gate:'💥 GATE COLLISION', tree:'💥 TREE COLLISION', ground:'💥 GROUND IMPACT'};
+function showCrashBanner(cause){
+  el.crashTitle.textContent=CRASH_LABELS[cause]||CRASH_LABELS.ground;
+  el.crashBanner.classList.add('show');
+}
+function hideCrashBanner(){
+  el.crashBanner.classList.remove('show');
+  el.crashMeterFill.style.width='0%';
 }
 
 function triggerCrash(cause){
   if(crashState) return;
   crashState={t:0, cause};
   drone.omega.set((Math.random()-.5)*16,(Math.random()-.5)*16,(Math.random()-.5)*16);
-  const causeMsg = cause==='gate' ? '💥 GATE COLLISION' : cause==='tree' ? '💥 TREE COLLISION' : '💥 GROUND IMPACT';
-  showSaveToast(causeMsg, '#ff3535');
+  lapDirty=true; updateLapDirtyUI();
+  showCrashBanner(cause);
   flashCrash();
   playCrashThud();
 }
@@ -899,23 +1474,41 @@ function triggerCrash(cause){
 // ═══════════════════════════════════════════════
 //  WORLD GENERATION — randomize-on-reset toggle
 // ═══════════════════════════════════════════════
-let randomizeOnReset=true;
-try{ const s=localStorage.getItem('fpv_world_randomize'); if(s!==null) randomizeOnReset=s==='1'; }catch(e){}
+let randomizeOnReset=store.getBool(KEYS.randomize,true);
 
 // ═══════════════════════════════════════════════
 //  INPUT
 // ═══════════════════════════════════════════════
 const keys={};
+const PREVENT_KEYS=new Set(['Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight']);
+
+// Which device most recently produced real input. A gamepad that is merely
+// plugged in no longer blanks the keyboard, and touching a virtual stick
+// takes over from either.
+let inputSource='keyboard';
+
 document.addEventListener('keydown',e=>{
+  if(e.repeat) return;
   keys[e.code]=true;
-  if(['Space','ShiftLeft','ShiftRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-  if(e.code==='KeyR'){ resetDrone(); if(randomizeOnReset) buildCircuit(); }
-  if(e.code==='KeyM') toggleMapping();
+  inputSource='keyboard';
+  if(PREVENT_KEYS.has(e.code)) e.preventDefault();
+  if(e.code==='Escape' && settingsOpen){ closeSettings(); return; }
+  // Flight hotkeys must not fire through the settings modal — pressing R there
+  // used to silently reset the run and reshuffle the world behind the dialog.
+  if(settingsOpen) return;
+  if(e.code==='KeyR'){ resetRun(); if(randomizeOnReset) buildCircuit(); }
+  if(e.code==='KeyM') toggleSettings();
+  if(e.key==='?') showHelp();
 });
 document.addEventListener('keyup',e=>{ keys[e.code]=false; });
 
+// A key held while the window loses focus never receives its keyup, which used
+// to leave the throttle pinned on return.
+function releaseAllKeys(){ for(const k in keys) keys[k]=false; }
+window.addEventListener('blur',releaseAllKeys);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) releaseAllKeys(); });
+
 const inp={throttle:0,roll:0,pitch:0,yaw:0};
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
 function applyDeadband(v,d){
   if(Math.abs(v)<d) return 0;
@@ -936,35 +1529,159 @@ function readAxisValue(axes, cfg, bipolar){
   }
 }
 
+// Gamepad axes at the moment of connection. A pad only claims control once one
+// of its axes has moved appreciably from that resting state, so a plugged-in but
+// untouched controller doesn't make the keyboard look broken.
+let gpBaseline=null, gpIndex=-1;
+const GP_WAKE_THRESHOLD=0.25;
+
+function pollGamepad(){
+  const pads=navigator.getGamepads();
+  let gp=gpIndex>=0?pads[gpIndex]:null;
+  if(!gp){
+    gpIndex=-1;
+    for(let i=0;i<pads.length;i++) if(pads[i]){ gp=pads[i]; gpIndex=i; break; }
+    if(gp) gpBaseline=Array.from(gp.axes);
+  }
+  if(!gp) return null;
+  if(!gpBaseline || gpBaseline.length!==gp.axes.length) gpBaseline=Array.from(gp.axes);
+  for(let i=0;i<gp.axes.length;i++){
+    if(Math.abs(gp.axes[i]-gpBaseline[i])>GP_WAKE_THRESHOLD){ inputSource='gamepad'; break; }
+  }
+  return gp;
+}
+
 function readInput(dt){
-  // Keyboard — cumulative throttle
-  if(keys['Space'])    inp.throttle=Math.min(inp.throttle+dt*1.2,1);
-  if(keys['ShiftLeft']||keys['ShiftRight']) inp.throttle=Math.max(inp.throttle-dt*1.2,0);
+  const gp=pollGamepad();
 
-  // Roll and Pitch — letter keys only (← → freed for FOV)
-  inp.roll =clamp((keys['KeyD']?1:0)-(keys['KeyA']?1:0),-1,1);
-  inp.pitch=clamp((keys['KeyW']?1:0)-(keys['KeyS']?1:0),-1,1);
-  inp.yaw  =clamp((keys['KeyE']?1:0)-(keys['KeyQ']?1:0),-1,1);
-
-  // Camera tilt (↑ ↓)
-  if(keys['ArrowUp'])   camTiltDeg=Math.min(camTiltDeg+dt*30, 90);
-  if(keys['ArrowDown']) camTiltDeg=Math.max(camTiltDeg-dt*30,  0);
-
-  // FOV (← →) range 50–120°
-  if(keys['ArrowLeft'])  { fovDeg=Math.max(fovDeg-dt*28, 50); cam.fov=fovDeg; cam.updateProjectionMatrix(); }
-  if(keys['ArrowRight']) { fovDeg=Math.min(fovDeg+dt*28,120); cam.fov=fovDeg; cam.updateProjectionMatrix(); }
-
-  // Controller (overrides keyboard when connected)
-  for(const gp of navigator.getGamepads()){
-    if(!gp) continue;
-    document.getElementById('gpname').textContent=gp.id.slice(0,26);
+  if(inputSource==='gamepad' && gp){
     const ax=gp.axes;
     inp.throttle=readAxisValue(ax, axisMap.throttle, false);
     inp.yaw     =readAxisValue(ax, axisMap.yaw,      true);
-    inp.roll    =readAxisValue(ax, axisMap.roll,      true);
-    inp.pitch   =readAxisValue(ax, axisMap.pitch,     true);
-    break;
+    inp.roll    =readAxisValue(ax, axisMap.roll,     true);
+    inp.pitch   =readAxisValue(ax, axisMap.pitch,    true);
+  } else if(inputSource==='touch'){
+    inp.throttle=touchInput.throttle;
+    inp.yaw     =touchInput.yaw;
+    inp.roll    =touchInput.roll;
+    inp.pitch   =touchInput.pitch;
+  } else {
+    // Keyboard — cumulative throttle
+    if(keys['Space'])    inp.throttle=Math.min(inp.throttle+dt*1.2,1);
+    if(keys['ShiftLeft']||keys['ShiftRight']) inp.throttle=Math.max(inp.throttle-dt*1.2,0);
+
+    // Roll and Pitch — letter keys only (← → freed for FOV)
+    inp.roll =clamp((keys['KeyD']?1:0)-(keys['KeyA']?1:0),-1,1);
+    inp.pitch=clamp((keys['KeyW']?1:0)-(keys['KeyS']?1:0),-1,1);
+    inp.yaw  =clamp((keys['KeyE']?1:0)-(keys['KeyQ']?1:0),-1,1);
   }
+
+  // Camera tilt (↑ ↓) and FOV (← →) stay on the keyboard in every mode
+  if(keys['ArrowUp'])   { camTiltDeg=Math.min(camTiltDeg+dt*30, 90); queueViewSave(); }
+  if(keys['ArrowDown']) { camTiltDeg=Math.max(camTiltDeg-dt*30,  0); queueViewSave(); }
+  if(keys['ArrowLeft'])  { fovDeg=Math.max(fovDeg-dt*28, 50); cam.fov=fovDeg; cam.updateProjectionMatrix(); queueViewSave(); }
+  if(keys['ArrowRight']) { fovDeg=Math.min(fovDeg+dt*28,120); cam.fov=fovDeg; cam.updateProjectionMatrix(); queueViewSave(); }
+}
+
+// Camera tilt/FOV change continuously while a key is held; persist once the
+// player lets go rather than writing to localStorage every frame.
+let viewSaveTimer=null;
+function queueViewSave(){
+  clearTimeout(viewSaveTimer);
+  viewSaveTimer=setTimeout(()=>{
+    store.set(KEYS.camTilt, Math.round(camTiltDeg));
+    store.set(KEYS.fov, Math.round(fovDeg));
+  },400);
+}
+
+// ═══════════════════════════════════════════════
+//  TOUCH CONTROLS — two virtual sticks in the Mode 2 layout.
+//  Left is throttle + yaw and the throttle axis is self-latching (it stays where
+//  released, like a real throttle); right is pitch + roll and springs to centre.
+// ═══════════════════════════════════════════════
+const touchInput={throttle:0,yaw:0,roll:0,pitch:0};
+
+function initStick(stickEl, knobEl, opts){
+  let pointerId=null, cx=0, cy=0;
+  // Deflection is stored normalized in [-1,1] rather than pixels, so the latched
+  // throttle survives both a release and the smaller mobile stick size.
+  let nx=0, ny=opts.latchY?1:0;
+
+  // Travel is read from the live layout — the stick shrinks under the mobile
+  // media query, and a hardcoded pixel radius would overflow its base there.
+  const travel=()=>Math.max(1, (stickEl.offsetWidth-knobEl.offsetWidth)/2);
+
+  const draw=()=>{
+    const t=travel();
+    knobEl.style.transform=`translate(${nx*t}px,${ny*t}px)`;
+  };
+  // Screen Y grows downward; sticks read "up" as positive.
+  const apply=()=>opts.onMove(nx,-ny);
+
+  const move=e=>{
+    if(pointerId===null || e.pointerId!==pointerId) return;
+    const t=travel();
+    let dx=(e.clientX-cx)/t, dy=(e.clientY-cy)/t;
+    const dist=Math.hypot(dx,dy);
+    if(dist>1){ dx/=dist; dy/=dist; }   // clamp to the circular gate
+    nx=dx; ny=dy;
+    draw(); apply();
+    e.preventDefault();
+  };
+
+  const end=e=>{
+    if(pointerId===null || e.pointerId!==pointerId) return;
+    stickEl.releasePointerCapture?.(pointerId);
+    pointerId=null;
+    nx=0;                     // yaw/roll always recentre
+    if(!opts.latchY) ny=0;    // pitch recentres; throttle holds where it was left
+    draw(); apply();
+  };
+
+  stickEl.addEventListener('pointerdown',e=>{
+    if(pointerId!==null) return;
+    pointerId=e.pointerId;
+    const r=stickEl.getBoundingClientRect();
+    cx=r.left+r.width/2; cy=r.top+r.height/2;
+    stickEl.setPointerCapture?.(e.pointerId);
+    inputSource='touch';
+    move(e);
+    e.preventDefault();
+  });
+  stickEl.addEventListener('pointermove',move);
+  stickEl.addEventListener('pointerup',end);
+  stickEl.addEventListener('pointercancel',end);
+
+  apply();
+  return {
+    redraw:draw,
+    reset(){ nx=0; ny=opts.latchY?1:0; draw(); apply(); },
+  };
+}
+
+// Left stick: vertical = throttle mapped from [-1,1] to [0,1], horizontal = yaw.
+const leftStick=initStick(el.tstickL, el.tknobL, {
+  latchY:true,
+  onMove:(x,y)=>{ touchInput.yaw=x; touchInput.throttle=clamp((y+1)/2,0,1); },
+});
+// Right stick: self-centering pitch/roll, same sign convention as the keyboard.
+const rightStick=initStick(el.tstickR, el.tknobR, {
+  latchY:false,
+  onMove:(x,y)=>{ touchInput.roll=x; touchInput.pitch=y; },
+});
+
+let touchMode=store.get(KEYS.touchMode,'auto');
+if(!['auto','on','off'].includes(touchMode)) touchMode='auto';
+function sticksVisible(){ return touchMode==='on' || (touchMode==='auto' && isCoarsePointer); }
+function applyTouchMode(){
+  const on=sticksVisible();
+  el.touchControls.classList.toggle('on',on);
+  document.body.classList.toggle('sticks',on);
+  document.body.classList.toggle('touch',on||isCoarsePointer);
+  if(!on && inputSource==='touch') inputSource='keyboard';
+  // Knob travel is measured from layout, which is only meaningful once the
+  // overlay is displayed — and it changes across the mobile breakpoint.
+  if(on){ leftStick.redraw(); rightStick.redraw(); }
 }
 
 // ═══════════════════════════════════════════════
@@ -972,7 +1689,8 @@ function readInput(dt){
 //  — idle throttle: armed motors generate minimum
 //    thrust even at 0% throttle
 // ═══════════════════════════════════════════════
-const _up=new THREE.Vector3(),_frc=new THREE.Vector3(),_dq=new THREE.Quaternion();
+const _up=new THREE.Vector3(),_frc=new THREE.Vector3(),_dq=new THREE.Quaternion(),
+      _omegaAxis=new THREE.Vector3();
 
 // Balanced-mode scratch objects (module-level, reused every frame — avoids per-frame allocation)
 const _AXIS_X=new THREE.Vector3(1,0,0), _AXIS_Y=new THREE.Vector3(0,1,0), _AXIS_Z=new THREE.Vector3(0,0,1);
@@ -991,8 +1709,7 @@ const ANGLE_MAX=45*Math.PI/180;  // Balanced mode: max commanded bank/pitch angl
 const ANGLE_P_GAIN=8;            // Balanced mode: rad/s commanded per rad of angle error
 
 // flightMode: 'acro' (rate control, no self-level) or 'balanced' (self-leveling, angle control)
-let flightMode='acro';
-try{ const m=localStorage.getItem('fpv_flight_mode'); if(m==='balanced') flightMode='balanced'; }catch(e){}
+let flightMode = store.get(KEYS.flightMode)==='balanced' ? 'balanced' : 'acro';
 
 // Balanced mode: builds a target attitude (current heading + targetPitch/targetRoll) and returns the
 // body-frame rotation (x,z components) needed to get there, via a quaternion attitude error — NOT two
@@ -1026,21 +1743,20 @@ function balancedError(targetPitch, targetRoll){
 }
 
 function physics(dt){
-  dt=Math.min(dt,.032);
   _up.set(0,1,0).applyQuaternion(drone.quat);
 
   // Effective thrust: minimum idle + remaining range controlled by the pilot,
   // shaped by a non-linear curve so hover sits at hoverStick regardless of TWR.
   // Armed motors never drop below idle in normal flight, but cut out on a crash.
   // Actual thrust takes a moment to reach the target (motor spool-up/down).
-  const targetThr = crashState ? 0 : phy.idleThrottle + (1-phy.idleThrottle)*Math.pow(inp.throttle,throttleP());
+  const targetThr = crashState ? 0 : phy.idleThrottle + (1-phy.idleThrottle)*Math.pow(inp.throttle,derived.throttleP);
   drone.thr += (targetThr-drone.thr)*clamp(dt/MOTOR_SPOOL_T,0,1);
 
   // Ground effect: near the ground, recirculated air adds extra thrust
   const alt=drone.pos.y-.12;
   const groundEffect = alt<GROUND_EFFECT_ALT ? 1+GROUND_EFFECT_BOOST*(1-alt/GROUND_EFFECT_ALT) : 1;
 
-  _frc.copy(_up).multiplyScalar(drone.thr*maxThr()*groundEffect);
+  _frc.copy(_up).multiplyScalar(drone.thr*derived.maxThr*groundEffect);
   _frc.y-=G*MASS;
   _frc.addScaledVector(drone.vel,-phy.linDrag*MASS);
   const spd=drone.vel.length();
@@ -1063,13 +1779,13 @@ function physics(dt){
     const targetPitch=-inp.pitch*ANGLE_MAX;
     const targetRoll =-inp.roll*ANGLE_MAX;
     const err=balancedError(targetPitch, targetRoll);
-    tx=clamp(ANGLE_P_GAIN*err.x, -ratePit(), ratePit());
-    tz=clamp(ANGLE_P_GAIN*err.z, -rateRol(), rateRol());
+    tx=clamp(ANGLE_P_GAIN*err.x, -derived.ratePitch, derived.ratePitch);
+    tz=clamp(ANGLE_P_GAIN*err.z, -derived.rateRoll,  derived.rateRoll);
   } else {
-    tx=-inp.pitch*ratePit();
-    tz=-inp.roll*rateRol();
+    tx=-inp.pitch*derived.ratePitch;
+    tz=-inp.roll*derived.rateRoll;
   }
-  const ty=crashState?0:-inp.yaw*rateYaw();
+  const ty=crashState?0:-inp.yaw*derived.rateYaw;
   const t=clamp(phy.omegaR*dt,0,1);
   const tY=clamp(phy.omegaR*YAW_SNAP_FACTOR*dt,0,1);
   drone.omega.x+=(tx-drone.omega.x)*t;
@@ -1077,19 +1793,26 @@ function physics(dt){
   drone.omega.z+=(tz-drone.omega.z)*t;
   drone.omega.multiplyScalar(Math.pow(phy.angDrag,dt));
   const len=drone.omega.length();
-  if(len>1e-5){ _dq.setFromAxisAngle(drone.omega.clone().normalize(),len*dt); drone.quat.multiply(_dq).normalize(); }
+  if(len>1e-5){
+    _omegaAxis.copy(drone.omega).multiplyScalar(1/len); // scratch vector — .clone() here allocated every step
+    _dq.setFromAxisAngle(_omegaAxis,len*dt);
+    drone.quat.multiply(_dq).normalize();
+  }
 
-  if(!crashState){ checkGateCrash(); checkTreeCrash(); }
+  if(!crashState){ checkGateCrash(); checkTreeCrash(); checkGates(); }
 }
 
 // ═══════════════════════════════════════════════
 //  GATE COLLISION (crash if you touch the frame bars or pole,
 //  instead of passing through the center opening)
 // ═══════════════════════════════════════════════
+// Scratch object — gateLocal runs several times per gate per physics substep and
+// used to allocate a fresh result each call.
+const _gl={lx:0,ly:0,lz:0};
 function gateLocal(g,pos){
   const dx=pos.x-g.pos.x, dz=pos.z-g.pos.z;
-  const ry=g.group.rotation.y, cs=Math.cos(ry), sn=Math.sin(ry);
-  return { lx:dx*cs-dz*sn, ly:pos.y-g.pos.y, lz:dx*sn+dz*cs };
+  _gl.lx=dx*g.cs-dz*g.sn; _gl.ly=pos.y-g.pos.y; _gl.lz=dx*g.sn+dz*g.cs;
+  return _gl;
 }
 
 function distToBox(px,py,pz,hx,hy,hz){
@@ -1097,10 +1820,19 @@ function distToBox(px,py,pz,hx,hy,hz){
   return Math.hypot(dx,dy,dz);
 }
 
+// Anything further out than this in XZ cannot touch the frame; the pole is
+// handled by the same bound since it sits directly under the gate centre.
+const GATE_BROAD_R=BAR_LEN/2+DRONE_R+0.5;
+const GATE_BROAD_R2=GATE_BROAD_R*GATE_BROAD_R;
+
 function checkGateCrash(){
   if(!collideGates) return;
   const halfT=T_FRAME/2, halfLen=BAR_LEN/2;
   for(const g of gates){
+    // Cheap squared-distance reject, mirroring checkTreeCrash — this skipped
+    // five box/capsule tests per gate that could never hit.
+    const ddx=drone.pos.x-g.pos.x, ddz=drone.pos.z-g.pos.z;
+    if(ddx*ddx+ddz*ddz>GATE_BROAD_R2) continue;
     const L=gateLocal(g,drone.pos);
     // Frame bars (top/bottom/left/right)
     if(distToBox(L.lx, L.ly-GATE_R, L.lz, halfLen,halfT,halfT)<DRONE_R){ triggerCrash('gate'); return; }
@@ -1129,7 +1861,7 @@ function distToVCyl(px,py,pz,r,yMin,yMax){
 }
 
 function checkTreeCrash(){
-  if(!collideTrees) return;
+  if(!collideTrees || !showTrees) return;
   for(const t of treeColliders){
     const dx=drone.pos.x-t.x, dz=drone.pos.z-t.z;
     if(dx*dx+dz*dz>9) continue; // cheap reject — max collision radius is well under 3m
@@ -1140,18 +1872,111 @@ function checkTreeCrash(){
 }
 
 // ═══════════════════════════════════════════════
-//  GATES
+//  GATES + LAP TIMING
 // ═══════════════════════════════════════════════
+let lapStartMs=null;     // null until the first gate of a lap is crossed
+let lapDirty=false;      // a crash happened this lap — it can't set a best
+let lapNumber=1;
+let bestLapMs=store.getNum(KEYS.bestLap,0)||null;
+let lastSplitDeltaMs=null;
+let bestSplits=null;     // per-gate splits of the current best lap, for the live delta
+let currentSplits=[];
+let lapHoldUntil=0;      // freeze the readout until this timestamp so a finish is readable
+const LAP_HOLD_MS=1800;
+
+function formatLap(ms){
+  if(ms===null||ms===undefined) return '--:--.---';
+  const m=Math.floor(ms/60000);
+  const s=Math.floor(ms/1000)%60;
+  const f=Math.floor(ms)%1000;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(f).padStart(3,'0')}`;
+}
+function formatDelta(ms){
+  const sign=ms<0?'-':'+';
+  const a=Math.abs(ms);
+  return `${sign}${(a/1000).toFixed(2)}s`;
+}
+
+function resetLapTimer(){
+  lapStartMs=null; lapDirty=false; lapNumber=1;
+  currentSplits=[]; lastSplitDeltaMs=null; lapHoldUntil=0;
+  lastHud.lap=el.lapTime.textContent=formatLap(null);
+  el.lapDelta.textContent='';
+  el.lapDelta.className='';
+  updateLapDirtyUI();
+  updateBestLapUI();
+}
+
+function updateLapDirtyUI(){ el.lapTime.classList.toggle('dirty',lapDirty); }
+
+function updateBestLapUI(){
+  el.lapBest.textContent='BEST '+formatLap(bestLapMs);
+  el.bestLapDisp.textContent=bestLapMs?formatLap(bestLapMs):'—';
+}
+
+function updateGateHUD(){
+  const n=gates.length||N_GATES;
+  el.gnum.textContent=(nextGate%n)+1;
+  el.lapnum.textContent=lapNumber;
+}
+
+function completeLap(nowMs){
+  const lapMs=nowMs-lapStartMs;
+  lastHud.lap=el.lapTime.textContent=formatLap(lapMs);
+  lapHoldUntil=nowMs+LAP_HOLD_MS;
+  el.lapTime.classList.remove('flash');
+  void el.lapTime.offsetWidth;          // restart the CSS animation
+  el.lapTime.classList.add('flash');
+
+  if(lapDirty){
+    showSaveToast('LAP '+formatLap(lapMs)+' (CRASHED — NOT COUNTED)','#ff4d4d');
+  } else if(bestLapMs===null || lapMs<bestLapMs){
+    const improved=bestLapMs!==null;
+    bestLapMs=lapMs; bestSplits=currentSplits.slice();
+    store.set(KEYS.bestLap,Math.round(lapMs));
+    updateBestLapUI();
+    showSaveToast((improved?'★ NEW BEST ':'★ FIRST LAP ')+formatLap(lapMs),'#3ddc84');
+  } else {
+    showSaveToast('LAP '+formatLap(lapMs)+'  '+formatDelta(lapMs-bestLapMs),'#00e5ff');
+  }
+
+  lapNumber++;
+  lapDirty=false; updateLapDirtyUI();
+  currentSplits=[];
+  lapStartMs=nowMs;   // next lap starts the instant this one ends
+}
+
 function checkGates(){
   if(!gates.length || crashState) return;
-  const g=gates[nextGate%gates.length];
+  const n=gates.length;
+  const g=gates[nextGate%n];
   const L=gateLocal(g,drone.pos);
   const innerHalf=GATE_R-T_FRAME/2;
   if(Math.abs(L.lx)<innerHalf && Math.abs(L.ly)<innerHalf && Math.abs(L.lz)<1.0){
-    g.mat.color.set(0x00cc44);
-    gatesPassed++; nextGate++;
-    document.getElementById('gnum').textContent=gatesPassed;
-    gates[nextGate%gates.length].mat.color.set(0xffff00);
+    const passedIdx=nextGate%n;
+    setGateColor(g,0x00cc44);
+    nextGate++;
+    const now=performance.now();
+
+    // A lap runs gate 1 → gate 1, so crossing gate 1 either arms the clock
+    // (first ever pass) or closes the lap that started there.
+    if(passedIdx===0){
+      if(lapStartMs===null) lapStartMs=now;
+      else completeLap(now);
+    } else if(lapStartMs!==null){
+      const split=now-lapStartMs;
+      currentSplits.push(split);
+      if(bestSplits && bestSplits.length>=currentSplits.length){
+        lastSplitDeltaMs=split-bestSplits[currentSplits.length-1];
+        el.lapDelta.textContent=formatDelta(lastSplitDeltaMs);
+        el.lapDelta.className=lastSplitDeltaMs<0?'ahead':'behind';
+      }
+    }
+
+    // The counter used to run past its own total ("GATE 15 / 12") because it
+    // tracked raw passes; it now wraps with the lap.
+    updateGateHUD();
+    setGateColor(gates[nextGate%n],THEME_DEFS[theme].nextColor);
   }
 }
 
@@ -1161,9 +1986,38 @@ function checkGates(){
 // ═══════════════════════════════════════════════
 //  ATTITUDE INDICATOR (ADI)
 // ═══════════════════════════════════════════════
-const adiCanvas = document.getElementById('adi');
+const adiCanvas = el.adi;
 const adiCtx    = adiCanvas.getContext('2d');
-const ADI_CX=41, ADI_CY=41, ADI_R=38;
+const ADI_SIZE=82, ADI_CX=41, ADI_CY=41, ADI_R=38;
+
+// The instrument used to be a fixed 82×82 bitmap drawn at 1×, so it was visibly
+// soft on HiDPI screens while the FPV overlay beside it was sharp. Same backing-
+// store trick as resizeFpvHud().
+function resizeADI(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  adiCanvas.width =Math.round(ADI_SIZE*dpr);
+  adiCanvas.height=Math.round(ADI_SIZE*dpr);
+  adiCtx.setTransform(dpr,0,0,dpr,0,0);   // keep drawing in CSS pixels
+  adiLastRoll=adiLastPitch=NaN;           // force a redraw at the new scale
+}
+
+// Sky/ground gradients are fixed in the rotated instrument space, so they are
+// built once instead of twice per frame.
+const ADI_SKY_GRAD=(()=>{
+  const g=adiCtx.createLinearGradient(0,-ADI_R,0,0);
+  g.addColorStop(0,'#0d3a5c'); g.addColorStop(1,'#1a6a9a'); return g;
+})();
+const ADI_GND_GRAD=(()=>{
+  const g=adiCtx.createLinearGradient(0,0,0,ADI_R*2);
+  g.addColorStop(0,'#6b3c14'); g.addColorStop(1,'#3a1f08'); return g;
+})();
+
+// Redraw only when the needle actually moved — below half a degree the result is
+// pixel-identical, so at rest the instrument costs nothing.
+let adiLastRoll=NaN, adiLastPitch=NaN;
+const ADI_EPS=0.5*Math.PI/180;
+
+resizeADI();
 
 // Reusable vectors for angle extraction
 const _adiUp    = new THREE.Vector3();
@@ -1171,9 +2025,12 @@ const _adiFwd   = new THREE.Vector3();
 const _adiRight = new THREE.Vector3();
 
 function drawADI(rollRad, pitchRad){
+  if(Math.abs(rollRad-adiLastRoll)<ADI_EPS && Math.abs(pitchRad-adiLastPitch)<ADI_EPS) return;
+  adiLastRoll=rollRad; adiLastPitch=pitchRad;
+
   const ctx=adiCtx;
   const cx=ADI_CX, cy=ADI_CY, r=ADI_R;
-  ctx.clearRect(0,0,82,82);
+  ctx.clearRect(0,0,ADI_SIZE,ADI_SIZE);
 
   ctx.save();
   // Circular clip
@@ -1188,19 +2045,14 @@ function drawADI(rollRad, pitchRad){
 
   const pitchPx = pitchRad * (r / (Math.PI*0.5)); // 38px per 90°
 
-  // Sky
-  const skyGrad=ctx.createLinearGradient(0,-r+pitchPx,0,pitchPx);
-  skyGrad.addColorStop(0,'#0d3a5c');
-  skyGrad.addColorStop(1,'#1a6a9a');
-  ctx.fillStyle=skyGrad;
-  ctx.fillRect(-r,-r*2+pitchPx,r*2,r*2);
-
-  // Ground
-  const gndGrad=ctx.createLinearGradient(0,pitchPx,0,r*2+pitchPx);
-  gndGrad.addColorStop(0,'#6b3c14');
-  gndGrad.addColorStop(1,'#3a1f08');
-  ctx.fillStyle=gndGrad;
-  ctx.fillRect(-r,pitchPx,r*2,r*2);
+  // Sky and ground. The gradients are defined around y=0 and the whole horizon
+  // is translated by the pitch offset, so they stay reusable across frames.
+  ctx.translate(0,pitchPx);
+  ctx.fillStyle=ADI_SKY_GRAD;
+  ctx.fillRect(-r,-r*2,r*2,r*2);
+  ctx.fillStyle=ADI_GND_GRAD;
+  ctx.fillRect(-r,0,r*2,r*2);
+  ctx.translate(0,-pitchPx);
 
   // Horizon line
   ctx.strokeStyle='#fff'; ctx.lineWidth=1.5;
@@ -1267,15 +2119,18 @@ function drawADI(rollRad, pitchRad){
 //  with pitch, plus two vertical gauges (left = pitch,
 //  right = roll) with a dot sliding along each.
 // ═══════════════════════════════════════════════
-const fpvCanvas=document.getElementById('fpv-hud');
+const fpvCanvas=el.fpvHud;
 const fpvCtx=fpvCanvas.getContext('2d');
 const HUD_C='rgba(255,255,255,';
 
-let fpvHudOn=true;
-try{ const s=localStorage.getItem('fpv_hud_overlay'); if(s!==null) fpvHudOn=s==='1'; }catch(e){}
+let fpvHudOn=store.getBool(KEYS.hudOverlay,true);
 
+// This is a full-viewport canvas cleared and repainted every frame for a handful
+// of thin lines, so it is capped below the renderer's ratio — the strokes are
+// 1–2px and gain nothing from 2× backing store.
+const FPV_MAX_DPR=1.5;
 function resizeFpvHud(){
-  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const dpr=Math.min(window.devicePixelRatio||1,FPV_MAX_DPR);
   fpvCanvas.width =Math.round(innerWidth *dpr);
   fpvCanvas.height=Math.round(innerHeight*dpr);
   fpvCanvas.style.width =innerWidth +'px';
@@ -1298,9 +2153,12 @@ function drawFpvRail(x,cy,halfH,label,val,range){
   }
 
   const dy=cy-(clamp(val,-range,range)/range)*halfH;
+  // A dark halo ring reads the same as shadowBlur against any background but
+  // skips the per-frame blur pass.
+  ctx.beginPath(); ctx.arc(x,dy,5.5,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fill();
   ctx.beginPath(); ctx.arc(x,dy,4,0,Math.PI*2);
-  ctx.fillStyle=HUD_C+'.95)';
-  ctx.shadowColor=HUD_C+'.8)'; ctx.shadowBlur=8; ctx.fill(); ctx.shadowBlur=0;
+  ctx.fillStyle=HUD_C+'.95)'; ctx.fill();
 
   ctx.textAlign='center';
   ctx.fillStyle=HUD_C+'.9)';
@@ -1310,9 +2168,11 @@ function drawFpvRail(x,cy,halfH,label,val,range){
 }
 
 function drawFpvHud(rollRad,pitchRad){
+  // The early-out used to sit *after* the clear, so a disabled overlay still paid
+  // for a full-viewport clearRect on every frame.
+  if(!fpvHudOn) return;
   const ctx=fpvCtx, W=innerWidth, H=innerHeight;
   ctx.clearRect(0,0,W,H);
-  if(!fpvHudOn) return;
 
   const cx=W/2, cy=H/2;
   const half   =Math.min(W*.20,240);   // half-length of the horizon bar
@@ -1335,14 +2195,17 @@ function drawFpvHud(rollRad,pitchRad){
   ctx.translate(cx,cy);
   ctx.rotate(-rollRad);
   ctx.translate(0, clamp(horizonY,-railH,railH));
-  ctx.strokeStyle=HUD_C+'.85)'; ctx.lineWidth=2;
-  ctx.shadowColor=HUD_C+'.6)'; ctx.shadowBlur=6;
   const gap=26;
-  ctx.beginPath();
-  ctx.moveTo(-half,0); ctx.lineTo(-gap,0); ctx.lineTo(-gap,9);
-  ctx.moveTo( half,0); ctx.lineTo( gap,0); ctx.lineTo( gap,9);
-  ctx.stroke();
-  ctx.shadowBlur=0;
+  const barPath=()=>{
+    ctx.beginPath();
+    ctx.moveTo(-half,0); ctx.lineTo(-gap,0); ctx.lineTo(-gap,9);
+    ctx.moveTo( half,0); ctx.lineTo( gap,0); ctx.lineTo( gap,9);
+    ctx.stroke();
+  };
+  // Dark underlay instead of shadowBlur — same legibility over bright sky,
+  // without a blur pass every frame.
+  ctx.strokeStyle='rgba(0,0,0,.4)'; ctx.lineWidth=4; barPath();
+  ctx.strokeStyle=HUD_C+'.85)';     ctx.lineWidth=2; barPath();
   ctx.restore();
 
   // ── Vertical gauges ──
@@ -1353,13 +2216,24 @@ function drawFpvHud(rollRad,pitchRad){
 // ═══════════════════════════════════════════════
 //  HUD
 // ═══════════════════════════════════════════════
+// Every telemetry field is written at 60fps but only changes when its *rounded*
+// display value does, so each is compared against the last painted value first.
+// Assigning textContent unconditionally invalidated layout on every frame.
+const lastHud={spd:'',alt:'',thrp:'',tilt:'',fov:'',thrH:'',roll:'',pitch:'',lap:''};
+function setText(node,key,value){
+  if(lastHud[key]===value) return;
+  lastHud[key]=value; node.textContent=value;
+}
+
 function updateHUD(){
-  document.getElementById('spd').textContent=drone.vel.length().toFixed(1);
-  document.getElementById('alt').textContent=Math.max(0,drone.pos.y-.12).toFixed(1);
-  document.getElementById('thrp').textContent=Math.round(inp.throttle*100);
-  document.getElementById('tilt-deg').textContent=Math.round(camTiltDeg);
-  document.getElementById('fov-disp').textContent=Math.round(fovDeg);
-  document.getElementById('thr-fill').style.height=(inp.throttle*100)+'%';
+  setText(el.spd,'spd',drone.vel.length().toFixed(1));
+  setText(el.alt,'alt',Math.max(0,drone.pos.y-.12).toFixed(1));
+  setText(el.thrp,'thrp',String(Math.round(inp.throttle*100)));
+  setText(el.tiltDeg,'tilt',String(Math.round(camTiltDeg)));
+  setText(el.fovDisp,'fov',String(Math.round(fovDeg)));
+
+  const thrH=(Math.round(inp.throttle*100))+'%';
+  if(lastHud.thrH!==thrH){ lastHud.thrH=thrH; el.thrFill.style.height=thrH; }
 
   // Extract roll and pitch from drone quaternion. Roll is the bank about the drone's own
   // forward axis, so it comes from the body up/right vectors — reading world X off the up
@@ -1368,39 +2242,66 @@ function updateHUD(){
   _adiFwd.set(0,0,-1).applyQuaternion(drone.quat);
   _adiRight.set(1,0,0).applyQuaternion(drone.quat);
   const rollRad  = Math.atan2(-_adiRight.y, _adiUp.y);      // + = right bank
-  const pitchRad = Math.asin(Math.max(-1,Math.min(1,_adiFwd.y))); // + = nose up
+  const pitchRad = Math.asin(clamp(_adiFwd.y,-1,1));        // + = nose up
   drawADI(rollRad, pitchRad);
   drawFpvHud(rollRad, pitchRad);
   const rollDeg=Math.round(rollRad*180/Math.PI);
   const pitchDeg=Math.round(pitchRad*180/Math.PI);
-  document.getElementById('adi-roll').textContent ='R '+(rollDeg>0?'+':'')+rollDeg+'°';
-  document.getElementById('adi-pitch').textContent='P '+(pitchDeg>0?'+':'')+pitchDeg+'°';
+  setText(el.adiRoll,'roll','R '+(rollDeg>0?'+':'')+rollDeg+'°');
+  setText(el.adiPitch,'pitch','P '+(pitchDeg>0?'+':'')+pitchDeg+'°');
+
+  // Running lap clock. It keeps counting through a crash — the respawn delay is
+  // the penalty. While a completed time is being held on screen the clock stays
+  // frozen so the finish is actually readable before the next lap starts.
+  const now=performance.now();
+  if(lapStartMs!==null && now>=lapHoldUntil){
+    setText(el.lapTime,'lap',formatLap(now-lapStartMs));
+  }
 }
 
 // ═══════════════════════════════════════════════
-//  MAPPING UI
+//  SETTINGS UI
 // ═══════════════════════════════════════════════
-let mappingOpen=false;
+let settingsOpen=false;
 let detectState=null;
 let wizQueue=null;
+let lastFocused=null;
 
 function getGamepad(){ for(const g of navigator.getGamepads()) if(g) return g; return null; }
-function toggleMapping(){ mappingOpen?closeMapping():openMapping(); }
+function toggleSettings(){ settingsOpen?closeSettings():openSettings(); }
 
-function openMapping(){
-  mappingOpen=true;
-  document.getElementById('map-modal').classList.add('open');
-  refreshMappingUI();
+function openSettings(){
+  settingsOpen=true;
+  lastFocused=document.activeElement;
+  el.mapModal.classList.add('open');
+  refreshSettingsUI();
+  showHelp();                        // the modal is also where the keybinds live
+  releaseAllKeys();                  // don't carry a held throttle into the dialog
+  el.closeBtn?.focus();
 }
 
-function closeMapping(){
-  mappingOpen=false; detectState=null; wizQueue=null;
-  document.getElementById('map-modal').classList.remove('open');
-  document.getElementById('wiz-status').textContent='';
+function closeSettings(){
+  settingsOpen=false; detectState=null; wizQueue=null;
+  el.mapModal.classList.remove('open');
+  el.wizStatus.textContent='';
   document.querySelectorAll('.det-btn').forEach(b=>{b.textContent='DETECT';b.classList.remove('active','ok');});
-  document.getElementById('wiz-btn').disabled=false;
+  el.wizBtn.disabled=false;
+  resetConfirmState();
   saveMap();
+  lastFocused?.focus?.();
 }
+
+// Keep Tab inside the dialog while it's open — otherwise focus walks onto the
+// HUD buttons behind the backdrop.
+const FOCUSABLE='button:not([disabled]),select,input,[tabindex]:not([tabindex="-1"])';
+document.addEventListener('keydown',e=>{
+  if(!settingsOpen || e.key!=='Tab') return;
+  const nodes=[...el.mapCard.querySelectorAll(FOCUSABLE)].filter(n=>n.offsetParent!==null);
+  if(!nodes.length) return;
+  const first=nodes[0], last=nodes[nodes.length-1];
+  if(e.shiftKey && document.activeElement===first){ last.focus(); e.preventDefault(); }
+  else if(!e.shiftKey && document.activeElement===last){ first.focus(); e.preventDefault(); }
+},true);
 
 // ── Axes monitor ─────────────────────────────
 function axisChannelLabel(idx){
@@ -1471,33 +2372,35 @@ function buildChannelTable(numAxes){
   }
 }
 
-function refreshMappingUI(){
+function refreshSettingsUI(){
   const gp=getGamepad();
   const n=gp?Math.max(gp.axes.length,4):8;
   buildAxesGrid(n);
   buildChannelTable(n);
-  document.getElementById('db-slider').value=Math.round(axisMap.deadband*100);
-  document.getElementById('db-disp').textContent=Math.round(axisMap.deadband*100)+'%';
-  const nogp=document.getElementById('no-gp');
-  if(nogp) nogp.style.display=gp?'none':'block';
-  document.getElementById('cfg-tilt-slider').value=Math.round(camTiltDeg);
-  document.getElementById('cfg-tilt-disp').textContent=Math.round(camTiltDeg)+'°';
-  document.getElementById('cfg-fov-slider').value=Math.round(fovDeg);
-  document.getElementById('cfg-fov-disp').textContent=Math.round(fovDeg)+'°';
+  el.dbSlider.value=Math.round(axisMap.deadband*100);
+  el.dbDisp.textContent=Math.round(axisMap.deadband*100)+'%';
+  el.noGp.style.display=gp?'none':'block';
+  el.cfgTiltSlider.value=Math.round(camTiltDeg);
+  el.cfgTiltDisp.textContent=Math.round(camTiltDeg)+'°';
+  el.cfgFovSlider.value=Math.round(fovDeg);
+  el.cfgFovDisp.textContent=Math.round(fovDeg)+'°';
+  updateBestLapUI();
 }
 
-document.getElementById('cfg-tilt-slider').addEventListener('input',e=>{
+el.cfgTiltSlider.addEventListener('input',e=>{
   camTiltDeg=parseFloat(e.target.value);
-  document.getElementById('cfg-tilt-disp').textContent=Math.round(camTiltDeg)+'°';
+  el.cfgTiltDisp.textContent=Math.round(camTiltDeg)+'°';
+  queueViewSave();
 });
-document.getElementById('cfg-fov-slider').addEventListener('input',e=>{
+el.cfgFovSlider.addEventListener('input',e=>{
   fovDeg=parseFloat(e.target.value);
   cam.fov=fovDeg; cam.updateProjectionMatrix();
-  document.getElementById('cfg-fov-disp').textContent=Math.round(fovDeg)+'°';
+  el.cfgFovDisp.textContent=Math.round(fovDeg)+'°';
+  queueViewSave();
 });
 
-// ── Live bars (every frame while modal open) ──
-function updateMappingLive(){
+// ── Live bars (every frame while the settings dialog is open) ──
+function updateSettingsLive(){
   const gp=getGamepad();
   if(!gp) return;
   const ax=gp.axes;
@@ -1623,9 +2526,11 @@ document.getElementById('db-slider').addEventListener('input',e=>{
 // ── Tabs ──────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn=>{
   btn.addEventListener('click',()=>{
-    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(b=>{
+      b.classList.remove('active'); b.setAttribute('aria-selected','false');
+    });
     document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-    btn.classList.add('active');
+    btn.classList.add('active'); btn.setAttribute('aria-selected','true');
     document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
   });
 });
@@ -1657,9 +2562,7 @@ const PRESET_DESC={
   cinematic:'Slow, smooth movements — for relaxed camera shots.',
 };
 function updatePresetDesc(name){
-  const el=document.getElementById('preset-desc');
-  if(!el) return;
-  el.textContent='► '+(name&&PRESET_DESC[name] ? PRESET_DESC[name] : 'Custom configuration (manually adjusted).');
+  el.presetDesc.textContent='► '+(name&&PRESET_DESC[name] ? PRESET_DESC[name] : 'Custom configuration (manually adjusted).');
 }
 
 function markPreset(name){
@@ -1672,8 +2575,9 @@ function markPreset(name){
 function applyPreset(name){
   if(!PHY_PRESETS[name]) return;
   Object.assign(phy, PHY_PRESETS[name]);
+  recomputePhyDerived();
   syncPhyUI(); markPreset(name);
-  updateAnalysis(); markUnsaved();
+  updateAnalysis(); queuePhySave();
 }
 
 document.querySelectorAll('.preset-btn').forEach(btn=>{
@@ -1692,14 +2596,16 @@ const sliderDefs=[
 ];
 
 sliderDefs.forEach(def=>{
-  const el=document.getElementById(def.id);
-  if(!el) return;
-  el.addEventListener('input',()=>{
-    phy[def.key]=parseFloat(el.value)*def.scale;
-    document.getElementById(def.dispId).textContent=def.disp(phy[def.key]);
+  const slider=document.getElementById(def.id);
+  const disp=document.getElementById(def.dispId);
+  if(!slider) return;
+  slider.addEventListener('input',()=>{
+    phy[def.key]=parseFloat(slider.value)*def.scale;
+    recomputePhyDerived();
+    disp.textContent=def.disp(phy[def.key]);
     document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
     updatePresetDesc(null);
-    markUnsaved();
+    queuePhySave();
     updateAnalysis();
   });
 });
@@ -1716,28 +2622,79 @@ function showSaveToast(msg, color){
   toastTimer=setTimeout(()=>t.classList.remove('show'), 2200);
 }
 
-// ── Save-status helpers ──────────────────────
-function markUnsaved(){
-  document.getElementById('save-status').textContent='● UNSAVED';
-  document.getElementById('save-status').style.color='#ff9040';
+// ── Save status ──────────────────────────────
+// Physics used to be the only setting that needed an explicit SAVE, while every
+// other control wrote through immediately — so tuning the handling, flying, and
+// reloading silently threw the tuning away. Physics now autosaves like the rest;
+// SAVE remains as an explicit "commit now" that stamps the time.
+function markSaving(){
+  el.saveStatus.textContent='● SAVING…';
+  el.saveStatus.style.color='var(--warn)';
 }
 function markSaved(ts){
   const d=new Date(ts);
   const hm=d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
-  document.getElementById('save-status').textContent='✓ SAVED';
-  document.getElementById('save-status').style.color='#00cc88';
-  document.getElementById('save-ts').textContent='last saved: '+hm;
+  el.saveStatus.textContent='✓ AUTOSAVED';
+  el.saveStatus.style.color='var(--ok)';
+  el.saveTs.textContent='last saved: '+hm;
 }
 function initSaveStatus(){
-  try{
-    const s=localStorage.getItem('fpv_phy');
-    if(!s){ document.getElementById('save-status').textContent='REAL-TIME CHANGES'; return; }
-    const p=JSON.parse(s);
-    if(p._ts) markSaved(p._ts);
-  }catch(e){}
+  const p=store.getJSON(KEYS.phy);
+  if(!p){ el.saveStatus.textContent='AUTOSAVED'; el.saveStatus.style.color='var(--fg-faint)'; return; }
+  if(p._ts) markSaved(p._ts);
+}
+
+let phySaveTimer=null;
+function queuePhySave(){
+  markSaving();
+  clearTimeout(phySaveTimer);
+  phySaveTimer=setTimeout(()=>{
+    const ts=savePhy();
+    if(ts) markSaved(ts);
+    else { el.saveStatus.textContent='⚠ SAVE UNAVAILABLE'; el.saveStatus.style.color='var(--danger)'; }
+  },500);
 }
 
 // ── Analysis panel ───────────────────────────
+// The panel used to be torn down and rebuilt via innerHTML on every `input`
+// event — a full parse plus reflow for each pixel of slider drag. The six cards
+// and the note are created once here; updateAnalysis() then only writes text and
+// bar widths.
+const AP_SPECS=[
+  { key:'twr',   label:'TWR (thrust-to-weight)', tip:'Thrust-to-weight ratio. ×2 minimum to climb, ×4-6 = real racing quad.' },
+  { key:'acc',   label:'Max net acceleration',   tip:'Net vertical acceleration at full throttle. Real: 25-50 m/s².' },
+  { key:'drag',  label:'Linear drag',            tip:'Air resistance. >0.4 = sense of weight. <0.05 = flying in a vacuum.' },
+  { key:'term',  label:'Approx. terminal velocity', tip:'Maximum speed in free fall. Limits how fast you need to react.' },
+  { key:'rate',  label:'Roll/pitch rates',       tip:'<300 = easy. 400-600 = freestyle. 700+ = aggressive racing.' },
+  { key:'snap',  label:'Snap (motor response)',  tip:'How fast the motors respond. >35 = snappy and direct.' },
+];
+const apNodes={};
+let apNote=null;
+(function buildAnalysisPanel(){
+  const grid=el.apGrid;
+  grid.innerHTML='';
+  for(const spec of AP_SPECS){
+    const div=document.createElement('div');
+    div.className='ap-item';
+    div.innerHTML=`<strong>${spec.label}</strong><span class="ap-value"></span>
+      <div class="ap-bar-wrap"><div class="ap-bar"></div></div>
+      <span class="ap-tip">${spec.tip}</span>`;
+    grid.appendChild(div);
+    apNodes[spec.key]={ value:div.querySelector('.ap-value'), bar:div.querySelector('.ap-bar') };
+  }
+  apNote=document.createElement('div');
+  apNote.className='ap-note';
+  grid.appendChild(apNote);
+})();
+
+function setAnalysisItem(key,text,barPct,color){
+  const n=apNodes[key];
+  if(n.value.textContent!==text) n.value.textContent=text;
+  const w=Math.max(0,Math.min(100,barPct))+'%';
+  if(n.bar.style.width!==w) n.bar.style.width=w;
+  if(n.bar.style.background!==color) n.bar.style.background=color;
+}
+
 function updateAnalysis(){
   const twr=(1/phy.hoverPct).toFixed(1);
   const maxAcc=((1/phy.hoverPct - 1)*9.81).toFixed(1);  // net upward accel at full thr
@@ -1758,50 +2715,20 @@ function updateAnalysis(){
   else if(phy.linDrag<0.06) notes.push('Minimal drag: free speed but can feel unrealistic.');
   else notes.push('Moderate drag: smoothly slows high-speed maneuvers.');
 
-  const items=[
-    { label:'TWR (thrust-to-weight)', value:'×'+twr,
-      bar:Math.min(100,Math.round((1/phy.hoverPct-1)/6*100)),
-      color:'#00e5ff',
-      tip:'Thrust-to-weight ratio. ×2 minimum to climb, ×4-6 = real racing quad.' },
-    { label:'Max net acceleration', value:maxAcc+' m/s²',
-      bar:Math.min(100,Math.round(parseFloat(maxAcc)/50*100)),
-      color:'#00e5ff',
-      tip:'Net vertical acceleration at full throttle. Real: 25-50 m/s².' },
-    { label:'Linear drag', value:phy.linDrag.toFixed(2),
-      bar:Math.min(100,dragPct),
-      color:phy.linDrag>0.35?'#ff9040':'#00e5ff',
-      tip:'Air resistance. >0.4 = sense of weight. <0.05 = flying in a vacuum.' },
-    { label:'Approx. terminal velocity', value:'~'+termVel+' m/s',
-      bar:Math.min(100,Math.round(parseFloat(termVel)/80*100)),
-      color:'#00e5ff',
-      tip:'Maximum speed in free fall. Limits how fast you need to react.' },
-    { label:'Roll/pitch rates', value:phy.rateDeg+'°/s',
-      bar:ratePct,
-      color:'#00e5ff',
-      tip:'<300 = easy. 400-600 = freestyle. 700+ = aggressive racing.' },
-    { label:'Snap (motor response)', value:phy.omegaR,
-      bar:snapPct,
-      color:'#00e5ff',
-      tip:'How fast the motors respond. >35 = snappy and direct.' },
-  ];
+  const CYAN='#00e5ff', AMBER='#ffb830';
+  setAnalysisItem('twr',  '×'+twr,             Math.round((1/phy.hoverPct-1)/6*100), CYAN);
+  setAnalysisItem('acc',  maxAcc+' m/s²',      Math.round(parseFloat(maxAcc)/50*100), CYAN);
+  setAnalysisItem('drag', phy.linDrag.toFixed(2), dragPct, phy.linDrag>0.35?AMBER:CYAN);
+  setAnalysisItem('term', '~'+termVel+' m/s',  Math.round(parseFloat(termVel)/80*100), CYAN);
+  setAnalysisItem('rate', phy.rateDeg+'°/s',   ratePct, CYAN);
+  setAnalysisItem('snap', String(phy.omegaR),  snapPct, CYAN);
 
-  const grid=document.getElementById('ap-grid');
-  grid.innerHTML='';
-  items.forEach(it=>{
-    const div=document.createElement('div');
-    div.className='ap-item';
-    div.innerHTML=`<strong>${it.label}</strong>${it.value}
-      <div class="ap-bar-wrap"><div class="ap-bar" style="width:${it.bar}%;background:${it.color}"></div></div>
-      <span style="font-size:8px;color:#3d6070;display:block;margin-top:2px">${it.tip}</span>`;
-    grid.appendChild(div);
-  });
-  const note=document.createElement('div');
-  note.className='ap-note';
-  note.textContent='▶ '+notes.join(' · ');
-  grid.appendChild(note);
+  const noteText='▶ '+notes.join(' · ');
+  if(apNote.textContent!==noteText) apNote.textContent=noteText;
 }
 
 // ── Preset & save buttons ────────────────────
+recomputePhyDerived();
 syncPhyUI();
 updateAnalysis();
 initSaveStatus();
@@ -1817,92 +2744,185 @@ initSaveStatus();
 function setupAdvToggle(btnId, bodyId, storeKey, label){
   const btn=document.getElementById(btnId), body=document.getElementById(bodyId);
   if(!btn||!body) return;
-  let open=false;
-  try{ open=localStorage.getItem(storeKey)==='1'; }catch(e){}
+  let open=store.getBool(storeKey,false);
   const apply=()=>{
     btn.classList.toggle('open',open);
     body.classList.toggle('open',open);
+    btn.setAttribute('aria-expanded',String(open));
     btn.textContent=(open?'▾ ':'▸ ')+label;
   };
   apply();
   btn.addEventListener('click',()=>{
     open=!open;
-    try{ localStorage.setItem(storeKey, open?'1':'0'); }catch(e){}
+    store.setBool(storeKey,open);
     apply();
   });
 }
-setupAdvToggle('controller-adv-toggle','controller-adv-body','fpv_ui_controller_adv','MANUAL / ADVANCED SETTINGS');
-setupAdvToggle('physics-adv-toggle','physics-adv-body','fpv_ui_physics_adv','ADVANCED SETTINGS (sliders)');
+setupAdvToggle('controller-adv-toggle','controller-adv-body',KEYS.ctrlAdv,'MANUAL / ADVANCED SETTINGS');
+setupAdvToggle('physics-adv-toggle','physics-adv-body',KEYS.phyAdv,'ADVANCED SETTINGS (sliders)');
+
+// ── Section explainers behind ⓘ buttons ──
+// The "► …" paragraphs used to sit open under every section, which made the
+// panel long and pushed the actual controls off-screen. They are collapsed by
+// default now; whichever ones you open stay open across sessions, held as a
+// single comma-separated key rather than one key per section.
+(function setupInfoButtons(){
+  const openIds=new Set(store.get(KEYS.hints,'').split(',').filter(Boolean));
+  const buttons=[...document.querySelectorAll('.info-btn')];
+
+  const persist=()=>store.set(KEYS.hints,[...openIds].join(','));
+
+  buttons.forEach(btn=>{
+    const hint=document.getElementById(btn.dataset.hint);
+    if(!hint) return;
+    const apply=open=>{
+      hint.classList.toggle('open',open);
+      btn.classList.toggle('open',open);
+      btn.setAttribute('aria-expanded',String(open));
+    };
+    apply(openIds.has(btn.dataset.hint));
+    btn.addEventListener('click',()=>{
+      const open=!openIds.has(btn.dataset.hint);
+      if(open) openIds.add(btn.dataset.hint); else openIds.delete(btn.dataset.hint);
+      apply(open);
+      persist();
+    });
+  });
+})();
+
+// ── Small checkbox helper — every GENERAL toggle writes through immediately ──
+function bindToggle(id, initial, onChange){
+  const node=document.getElementById(id);
+  node.checked=initial;
+  node.addEventListener('change',()=>onChange(node.checked));
+  return node;
+}
 
 // ── World generation tab ─────────────────────
-const randomizeToggle=document.getElementById('randomize-toggle');
-const randomizeBtn=document.getElementById('randomize-btn');
+const randomizeBtn=el.randomizeBtn;
+const randomizeToggle=bindToggle('randomize-toggle',randomizeOnReset,v=>{
+  randomizeOnReset=v;
+  store.setBool(KEYS.randomize,v);
+  syncRandomizeUI();
+});
 function syncRandomizeUI(){
   randomizeToggle.checked=randomizeOnReset;
   randomizeBtn.style.display=randomizeOnReset?'none':'inline-block';
 }
 syncRandomizeUI();
-randomizeToggle.addEventListener('change',()=>{
-  randomizeOnReset=randomizeToggle.checked;
-  try{ localStorage.setItem('fpv_world_randomize', randomizeOnReset?'1':'0'); }catch(e){}
-  syncRandomizeUI();
-});
 randomizeBtn.addEventListener('click',()=>{
   buildCircuit();
+  resetRun();
   showSaveToast('✓ WORLD RANDOMIZED');
 });
 
 // ── FPV attitude HUD toggle ──────────────────
-const fpvHudToggle=document.getElementById('fpvhud-toggle');
-fpvHudToggle.checked=fpvHudOn;
-fpvHudToggle.addEventListener('change',()=>{
-  fpvHudOn=fpvHudToggle.checked;
-  try{ localStorage.setItem('fpv_hud_overlay', fpvHudOn?'1':'0'); }catch(e){}
+bindToggle('fpvhud-toggle',fpvHudOn,v=>{
+  fpvHudOn=v;
+  store.setBool(KEYS.hudOverlay,v);
   if(!fpvHudOn) fpvCtx.clearRect(0,0,innerWidth,innerHeight);
 });
 
+// ── Graphics quality ─────────────────────────
+el.qualitySelect.value=quality;
+function syncQualityNote(){
+  const needsReload = QUALITY_TIERS[quality].antialias !== QUALITY_TIERS[el.qualitySelect.value].antialias;
+  el.qualityNote.textContent = needsReload ? 'reload to change antialiasing' : '';
+}
+el.qualitySelect.addEventListener('change',()=>{
+  const next=el.qualitySelect.value;
+  // Antialiasing is fixed when the WebGL context is created, so only that part
+  // of the tier needs a reload; resolution and shadows change immediately.
+  const aaChanges=QUALITY_TIERS[quality].antialias!==QUALITY_TIERS[next].antialias;
+  quality=next;
+  store.set(KEYS.quality,quality);
+  applyQuality(quality);
+  el.qualityNote.textContent = aaChanges ? 'reload to apply antialiasing' : '';
+  showSaveToast('✓ QUALITY: '+quality.toUpperCase());
+});
+syncQualityNote();
+
+// ── Touch controls ───────────────────────────
+el.touchSelect.value=touchMode;
+el.touchSelect.addEventListener('change',()=>{
+  touchMode=el.touchSelect.value;
+  store.set(KEYS.touchMode,touchMode);
+  applyTouchMode();
+});
+applyTouchMode();
+
+// ── Lap records ──────────────────────────────
+el.clearBestBtn.addEventListener('click',()=>{
+  bestLapMs=null; bestSplits=null;
+  store.remove(KEYS.bestLap);
+  updateBestLapUI();
+  el.lapDelta.textContent=''; el.lapDelta.className='';
+  showSaveToast('✓ BEST LAP CLEARED');
+});
+updateBestLapUI();
+
 // ── Collision toggles ─────────────────────────
-const collideGatesToggle=document.getElementById('collide-gates-toggle');
-collideGatesToggle.checked=collideGates;
-collideGatesToggle.addEventListener('change',()=>{
-  collideGates=collideGatesToggle.checked;
-  try{ localStorage.setItem('fpv_collide_gates', collideGates?'1':'0'); }catch(e){}
+bindToggle('collide-gates-toggle',collideGates,v=>{
+  collideGates=v; store.setBool(KEYS.collideGates,v);
+});
+bindToggle('collide-trees-toggle',collideTrees,v=>{
+  collideTrees=v; store.setBool(KEYS.collideTrees,v);
 });
 
-const collideTreesToggle=document.getElementById('collide-trees-toggle');
-collideTreesToggle.checked=collideTrees;
-collideTreesToggle.addEventListener('change',()=>{
-  collideTrees=collideTreesToggle.checked;
-  try{ localStorage.setItem('fpv_collide_trees', collideTrees?'1':'0'); }catch(e){}
+// ── Scenery toggles ───────────────────────────
+const showTreesToggle=bindToggle('show-trees-toggle',showTrees,v=>{
+  showTrees=v;
+  applyTreeVisibility();
+  store.setBool(KEYS.trees+theme,v);
 });
 
-document.getElementById('map-btn').addEventListener('click',openMapping);
-document.getElementById('close-btn').addEventListener('click',closeMapping);
-document.getElementById('wiz-btn').addEventListener('click',startWizard);
-document.getElementById('map-modal').addEventListener('click',e=>{
-  if(e.target===document.getElementById('map-modal')) closeMapping();
+// ── Theme select ───────────────────────────────
+el.themeSelect.value=theme;
+el.themeSelect.addEventListener('change',()=>{
+  theme=el.themeSelect.value;
+  store.set(KEYS.theme,theme);
+  showTrees=loadShowTreesFor(theme);
+  showTreesToggle.checked=showTrees;
+  applyTreeVisibility();
+  applyThemeVisuals(theme);
 });
 
-document.getElementById('save-btn').addEventListener('click',()=>{
+el.mapBtn.addEventListener('click',openSettings);
+el.closeBtn.addEventListener('click',closeSettings);
+el.wizBtn.addEventListener('click',startWizard);
+el.mapModal.addEventListener('click',e=>{ if(e.target===el.mapModal) closeSettings(); });
+
+el.saveBtn.addEventListener('click',()=>{
+  clearTimeout(phySaveTimer);
   const ts=savePhy();
   saveMap();
   if(ts){
     markSaved(ts);
     showSaveToast('✓ CONFIG SAVED');
   } else {
-    showSaveToast('⚠ SAVE ERROR','#ff6d00');
+    showSaveToast('⚠ SAVE UNAVAILABLE','#ffb830');
   }
 });
 
-document.getElementById('reset-btn').addEventListener('click',()=>{
-  if(!confirm('Reset physics to default?')) return;
+// Two-step confirm on the button itself — the old blocking confirm() dialog was
+// the only piece of browser chrome left in an otherwise self-contained UI.
+let resetConfirmTimer=null;
+function resetConfirmState(){
+  clearTimeout(resetConfirmTimer);
+  el.resetBtn.classList.remove('confirming');
+  el.resetBtn.textContent='↺ RESET';
+}
+el.resetBtn.addEventListener('click',()=>{
+  if(!el.resetBtn.classList.contains('confirming')){
+    el.resetBtn.classList.add('confirming');
+    el.resetBtn.textContent='↺ CONFIRM?';
+    resetConfirmTimer=setTimeout(resetConfirmState,3500);
+    return;
+  }
+  resetConfirmState();
   resetPhy();
-  syncPhyUI();
   updateAnalysis();
   initSaveStatus();
-  document.getElementById('save-status').textContent='RESET — unsaved';
-  document.getElementById('save-status').style.color='#ff9040';
-  document.getElementById('save-ts').textContent='';
 });
 
 // ═══════════════════════════════════════════════
@@ -1972,9 +2992,9 @@ function playCrashThud(){
   src.start();
 }
 
-document.getElementById('sound-btn').addEventListener('click',()=>{
+el.soundBtn.addEventListener('click',()=>{
   soundEnabled=!soundEnabled;
-  document.getElementById('sound-btn').textContent=soundEnabled?'🔊':'🔇';
+  el.soundBtn.textContent=soundEnabled?'🔊':'🔇';
 });
 
 // ═══════════════════════════════════════════════
@@ -1984,62 +3004,118 @@ function isFullscreen(){
   return !!(document.fullscreenElement || document.webkitFullscreenElement);
 }
 function toggleFullscreen(){
-  const el=document.documentElement;
+  const root=document.documentElement;
   if(!isFullscreen()){
-    const req=el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-    if(req){ const p=req.call(el); if(p && p.catch) p.catch(()=>{}); }
+    const req=root.requestFullscreen || root.webkitRequestFullscreen || root.msRequestFullscreen;
+    if(req){ const p=req.call(root); if(p && p.catch) p.catch(()=>{}); }
   } else {
     const exit=document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
     if(exit) exit.call(document);
   }
 }
-document.getElementById('fullscreen-btn').addEventListener('click',toggleFullscreen);
+el.fullscreenBtn.addEventListener('click',toggleFullscreen);
 ['fullscreenchange','webkitfullscreenchange'].forEach(evt=>{
   document.addEventListener(evt,()=>{
-    document.getElementById('fullscreen-btn').textContent=isFullscreen()?'⤡':'⤢';
+    el.fullscreenBtn.textContent=isFullscreen()?'⤡':'⤢';
+    // Fullscreen changes the viewport without always firing `resize` first.
+    resizeFpvHud();
   });
 });
 
 // ═══════════════════════════════════════════════
 //  FLIGHT MODE (Acro / Balanced) — click the badge to switch
 // ═══════════════════════════════════════════════
+const modeBadge=document.querySelector('.mode-badge');
 function updateModeBadge(){
-  document.querySelector('.mode-badge').textContent = flightMode==='balanced' ? 'BALANCED MODE' : 'ACRO MODE';
+  modeBadge.textContent = flightMode==='balanced' ? 'BALANCED MODE' : 'ACRO MODE';
 }
-document.querySelector('.mode-badge').addEventListener('click',()=>{
+function toggleFlightMode(){
   flightMode = flightMode==='balanced' ? 'acro' : 'balanced';
-  try{ localStorage.setItem('fpv_flight_mode', flightMode); }catch(e){}
+  store.set(KEYS.flightMode, flightMode);
   updateModeBadge();
-});
+  showSaveToast(flightMode==='balanced'?'BALANCED (SELF-LEVELING)':'ACRO (RATE MODE)');
+}
+modeBadge.addEventListener('click',toggleFlightMode);
 updateModeBadge();
 
+// Touch-only HUD shortcut for R, which doesn't exist on a phone. Mode switching
+// stays on the mode badge itself — it relocates to bottom-center on touch.
+el.resetBtnHud.addEventListener('click',()=>{
+  resetRun();
+  if(randomizeOnReset) buildCircuit();
+});
+
+// buildCircuit() runs before the lap-timer state is declared, so the first paint
+// of the gate/lap/best readouts happens here instead.
+function initHUDState(){
+  updateGateHUD();
+  updateBestLapUI();
+}
+initHUDState();
+
 // ═══════════════════════════════════════════════
-//  MAIN LOOP
+//  KEYBIND HINT — useful on the first flight, clutter after that
 // ═══════════════════════════════════════════════
-let last=performance.now(), running=false;
+let helpFadeTimer=null;
+function scheduleHelpFade(){
+  clearTimeout(helpFadeTimer);
+  helpFadeTimer=setTimeout(()=>el.help.classList.add('faded'), 15000);
+}
+function showHelp(){
+  el.help.classList.remove('faded');
+  scheduleHelpFade();
+}
+
+// ═══════════════════════════════════════════════
+//  MAIN LOOP — fixed-timestep physics
+//
+//  The simulation used to integrate once per rendered frame with dt clamped to
+//  32ms. Two things went wrong with that: at 30fps and 40 m/s the drone moved
+//  1.28m per step, so it could pass straight through a 0.48m gate bar (and
+//  straddle the 2m gate-detection slab, silently voiding a clean pass); and
+//  below ~31fps the clamp made the whole sim run in slow motion.
+//
+//  Physics now advances in fixed 1/120s steps regardless of frame rate, with
+//  leftover time carried in an accumulator. Collision tests live inside
+//  physics(), so they are sampled at the substep rate too.
+// ═══════════════════════════════════════════════
+const FIXED_DT=1/120;
+const MAX_SUBSTEPS=8;   // ~67ms of catch-up; beyond that time is dropped rather
+                        // than spiralling after a tab switch or a long stall
+let last=performance.now(), running=false, accumulator=0;
 
 function loop(){
   if(!running) return;
   requestAnimationFrame(loop);
-  const now=performance.now(), dt=(now-last)/1000; last=now;
+  const now=performance.now();
+  const frameDt=Math.min((now-last)/1000, 0.25); last=now;
 
-  readInput(dt);
+  readInput(frameDt);
 
-  if(!mappingOpen){
-    physics(dt);
-    if(crashState){
-      crashState.t+=dt;
-      if(crashState.t>CRASH_RESPAWN_T){ crashState=null; resetDrone(); }
-    } else {
-      checkGates();
+  if(!settingsOpen){
+    accumulator+=frameDt;
+    let steps=0;
+    while(accumulator>=FIXED_DT && steps<MAX_SUBSTEPS){
+      physics(FIXED_DT);
+      if(crashState){
+        crashState.t+=FIXED_DT;
+        if(crashState.t>CRASH_RESPAWN_T) respawnAtCurrentGate();
+      }
+      accumulator-=FIXED_DT; steps++;
     }
+    if(steps===MAX_SUBSTEPS) accumulator=0;   // give up on the backlog
+
+    if(crashState){
+      el.crashMeterFill.style.width=Math.min(100,crashState.t/CRASH_RESPAWN_T*100)+'%';
+    }
+
     cam.position.copy(drone.pos);
     Q_TILT.setFromAxisAngle(_TILT_AXIS, camTiltDeg*Math.PI/180);
     cam.quaternion.copy(drone.quat).multiply(Q_TILT);
     updateHUD();
     updateMotorSound(drone.thr);
   } else {
-    updateMappingLive();
+    updateSettingsLive();
   }
 
   renderer.render(scene,cam);
@@ -2048,29 +3124,38 @@ function loop(){
 // ═══════════════════════════════════════════════
 //  RESIZE + GAMEPAD EVENTS
 // ═══════════════════════════════════════════════
+let resizeTimer=null;
 window.addEventListener('resize',()=>{
   cam.aspect=innerWidth/innerHeight;
   cam.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
-  resizeFpvHud();
+  // Reallocating the full-screen HUD backing store is expensive, so it trails
+  // the drag rather than firing on every resize event.
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>{ resizeFpvHud(); resizeADI(); applyTouchMode(); },120);
 });
 window.addEventListener('gamepadconnected',e=>{
-  document.getElementById('gpname').textContent=e.gamepad.id.slice(0,26);
-  if(mappingOpen) refreshMappingUI();
+  el.gpname.textContent=e.gamepad.id.slice(0,26);
+  gpBaseline=null; gpIndex=-1;   // re-baseline so the new pad must move to take over
+  if(settingsOpen) refreshSettingsUI();
 });
 window.addEventListener('gamepaddisconnected',()=>{
-  document.getElementById('gpname').textContent='NO CONTROLLER';
-  const nogp=document.getElementById('no-gp');
-  if(mappingOpen && nogp) nogp.style.display='block';
+  el.gpname.textContent='NO CONTROLLER';
+  gpBaseline=null; gpIndex=-1;
+  if(inputSource==='gamepad') inputSource='keyboard';
+  if(settingsOpen) el.noGp.style.display='block';
 });
 
 // ═══════════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════════
-document.getElementById('btn-start').addEventListener('click',()=>{
-  document.getElementById('splash').style.display='none';
+el.btnStart.addEventListener('click',()=>{
+  el.splash.classList.add('hiding');
+  setTimeout(()=>{ el.splash.style.display='none'; },400);
   initAudio();
-  running=true; last=performance.now(); loop();
+  running=true; last=performance.now(); accumulator=0;
+  scheduleHelpFade();
+  loop();
 });
 </script>
 </body>

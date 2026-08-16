@@ -2,6 +2,8 @@
 
 A browser-based FPV (first-person view) drone racing simulator in **acro/balance mode**. No install, no build, any device, any gamepad — it's a single HTML file.
 
+![alt text](assets/collage.png)
+
 ## Running it
 
 Open [index.html](index.html) directly in a browser.
@@ -18,16 +20,27 @@ Open [index.html](index.html) directly in a browser.
 | Yaw (rotate) | `Q` / `E` |
 | Camera tilt | `↑` / `↓` |
 | Field of view (FOV) | `←` / `→` |
-| Reset drone / world | `R` |
+| Reset run / world | `R` |
 | Open settings | `M` or the ⚙ button |
+| Close settings | `ESC` |
+| Show keybind hint again | `?` |
 
 ### Gamepad
 
-Plug in a controller and it's used automatically (Mode 2 layout by default: left stick = throttle/yaw, right stick = pitch/roll). Gamepad input overrides keyboard whenever a controller is connected. Use the **CONTROLLER** settings tab to remap axes if the defaults don't match your stick, including an auto-detect wizard (see below).
+Plug in a controller and it's used automatically (Mode 2 layout by default: left stick = throttle/yaw, right stick = pitch/roll). A connected controller takes over as soon as you actually move a stick — leaving one plugged in but idle doesn't disable the keyboard, and any keypress hands control back. Use the **CONTROLLER** settings tab to remap axes if the defaults don't match your stick, including an auto-detect wizard (see below).
+
+### Touch (phone / tablet)
+
+Two on-screen sticks appear automatically on touch devices, laid out like Mode 2:
+
+- **Left stick** — throttle (vertical) and yaw (horizontal). The throttle axis is **self-latching**: it stays where you leave it, like a real throttle stick. Yaw springs back to centre.
+- **Right stick** — pitch and roll, both self-centering.
+
+Extra **MODE** and **↺** buttons appear in the HUD button row for the flight-mode and reset actions that would otherwise need a keyboard. Set **Virtual sticks** in **CONTROLLER** settings to `ALWAYS ON` / `OFF` to override the automatic detection.
 
 ### Flight modes
 
-Click the mode badge (bottom-left of the HUD) to switch between:
+Click the mode badge (bottom-left of the HUD, or bottom-centre with the touch sticks up) to switch between:
 
 - **ACRO** — pure rate control. Sticks command rotation speed; the drone holds whatever angle you leave it at. No self-leveling.
 - **BALANCED** — angle/self-leveling mode. Sticks command a target bank/pitch angle and the drone levels itself out when the stick is centered. Easier for beginners.
@@ -35,17 +48,40 @@ Click the mode badge (bottom-left of the HUD) to switch between:
 ## HUD
 
 - **Telemetry** (top-left): speed, altitude, throttle %, camera tilt, FOV.
-- **Gate counter** (top-center): current gate / total gates.
+- **Gate + lap counter** (top-center): current gate / total gates, and the current lap number.
+- **Lap timer** (below the gate counter) — see [Lap timing](#lap-timing).
 - **Attitude Indicator (ADI)** — the circular artificial-horizon dial (bottom-right) showing roll and pitch.
 - **FPV attitude overlay** — a horizon bar across the center of the view (tilts with roll, slides with pitch) plus two side gauges for pitch and roll with a numeric readout. Toggle it on/off in **GENERAL** settings.
-- **Throttle bar** (left edge).
+- **Throttle bar** (left edge; hidden when the touch sticks are up, since the left stick shows it).
+- **Crash banner** — names what you hit and shows a countdown bar until the respawn.
 - 🔊 mute engine sound, ⤢ toggle fullscreen, ⚙ open settings.
+
+The keybind hint along the bottom fades out after ~15 seconds of flight. Press `?` or open settings to bring it back.
 
 ## Flying the circuit
 
-Fly through the numbered gates in order — passing through the center of the current gate advances you to the next one. Clipping a gate's frame/pole, or hitting the ground hard, triggers a crash and respawn. Press `R` to reset your position (and reshuffle the gate layout, unless disabled — see below).
+Fly through the numbered gates in order — passing through the center of the current gate advances you to the next one. Clipping a gate's frame/pole, or hitting the ground hard, triggers a crash.
+
+After a crash you respawn **just short of the gate you were heading for, facing it**, so a late mistake costs you a few seconds rather than the whole run — your gate progress and lap clock are preserved. Press `R` for a full restart (and to reshuffle the gate layout, unless disabled — see below).
+
+## Lap timing
+
+A lap runs from crossing gate 1 to crossing gate 1 again.
+
+- The **running lap time** starts on your first gate and keeps counting through crashes — the respawn delay is the penalty.
+- Each gate posts a **split**, and the `+/-` figure next to `BEST` shows how far ahead (green) or behind (red) that split is versus your best lap.
+- Completing a lap flashes the time and compares it to your **best lap**, which persists in `localStorage`.
+- A lap in which you crashed is **dirty**: the clock turns red and that lap cannot set a new best, though it still displays.
+
+Clear the stored best from **GENERAL → LAP TIMING**.
 
 ## Settings (⚙ / `M`)
+
+Close the panel with **▶ FLY**, `ESC`, `M`, or a click outside it.
+
+Most sections have a small **ⓘ** button next to their title. Click it for an in-app explanation of what that section does; the button fills in while its note is open. Notes are collapsed by default so the controls all fit on one screen, and whichever ones you leave open are remembered between sessions. Everything they say is also covered — usually in more detail — in the sections below.
+
+The two **ADVANCED SETTINGS** blocks (in CONTROLLER and PHYSICS) collapse the same way and likewise remember their state.
 
 ### CONTROLLER
 
@@ -58,7 +94,9 @@ Fly through the numbered gates in order — passing through the center of the cu
 | Camera tilt | Cockpit view angle — how far the camera looks down/up relative to the drone's nose | 0–90° | 20° |
 | Field of view | Camera FOV — wider feels more "fisheye" and fast, narrower feels more zoomed-in | 50–120° | 85° |
 
-Both are also bound to `↑`/`↓` (tilt) and `←`/`→` (FOV) while flying.
+Both are also bound to `↑`/`↓` (tilt) and `←`/`→` (FOV) while flying, and both persist between sessions.
+
+**Virtual sticks** — `AUTO` (touch devices only, the default), `ALWAYS ON`, or `OFF`. See [Touch](#touch-phone--tablet).
 
 **Manual / advanced settings** — expand for the raw axis mapping:
 
@@ -86,7 +124,7 @@ Four presets tune how the drone feels:
 
 The simulator actually starts on a tuned **default** configuration that doesn't exactly match any preset (punchy but controllable) — it's what you get on first load, before picking a preset or touching a slider.
 
-**Advanced settings (sliders)** — fine-tune any parameter individually; any manual tweak is tracked as "unsaved" (and un-marks the active preset) until you hit **SAVE**:
+**Advanced settings (sliders)** — fine-tune any parameter individually. Changes apply live and **autosave** about half a second after you stop dragging (any manual tweak un-marks the active preset); the **SAVE** button is an explicit "commit now" that stamps the time in the footer:
 
 | Slider | What it controls | Range | Default |
 |---|---|---|---|
@@ -103,9 +141,25 @@ A live **analysis panel** below the sliders derives human-readable stats from th
 
 ### GENERAL
 
+- **Visual theme** — `DAY` or `NIGHT` (neon-lit gates on a dark track). Each theme remembers its own "show trees" preference.
+- **Graphics quality** — `LOW` / `MEDIUM` / `HIGH`, driving render resolution, antialiasing and the shadow map together. Defaults to MEDIUM on touch devices and HIGH on desktop. Resolution and shadows switch instantly; antialiasing is fixed when the WebGL context is created, so changing that part needs a page reload (the UI says so when it applies).
+- **Lap timing** — shows the stored best lap and a **CLEAR BEST** button.
 - **Randomize world on every reset** — when on, pressing `R` reshuffles gates and trees along with your position. Turn it off to keep the same layout (R only resets your position); reshuffle manually with the **RANDOMIZE NOW** button that appears. Default: on.
 - **Show attitude HUD (pitch/roll)** — toggles the FPV horizon bar and side gauges described above. Default: on.
+- **Show trees** — draws the trees dotted around the map. Hidden trees never collide, whatever "Collide with trees" is set to. Default: on in DAY, off in NIGHT, and each theme remembers your choice separately.
 - **Collide with gates** — when on, clipping a gate's frame or support pole triggers a crash instead of only counting a pass when you go through the center. Turn off to fly through gate frames freely. Default: on.
 - **Collide with trees** — when on, touching a tree's trunk or foliage triggers a crash. Turn off to fly through the scenery — handy for practicing lines without being punished for clipping trees. Default: on.
 
-All settings persist automatically in your browser (`localStorage`) — no account or save file needed.
+### Footer
+
+- **↺ RESET** returns the physics sliders to the tuned default. It asks once — the button changes to `↺ CONFIRM?` for a few seconds, and only a second click actually resets.
+- **💾 SAVE** commits immediately and stamps the time. It's optional: physics autosaves on its own, and every other setting writes through the moment you change it.
+- **▶ FLY** closes the panel.
+
+All settings persist automatically in your browser (`localStorage`) — no account or save file needed. Nothing leaves your machine.
+
+## Notes
+
+The simulation runs on a **fixed 1/120s timestep** with an accumulator, so flight feel and collision accuracy don't change with your frame rate — a slow machine renders fewer frames rather than running the physics in slow motion or letting a fast drone tunnel through a gate bar.
+
+`three.js` is loaded from a CDN, so the first load needs a network connection (it's cached afterwards). If the download fails the page says so instead of showing a black screen.
