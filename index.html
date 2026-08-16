@@ -7,6 +7,15 @@
 <meta name="google-site-verification" content="xshOZZhVltxaMU2X-pFqjg4-7_McIyIJwDxKA8xrDuI" />
 <title>FPV Drone Sim</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23050a12'/%3E%3Cg stroke='%2300e5ff' stroke-width='2' fill='none'%3E%3Ccircle cx='9' cy='9' r='4'/%3E%3Ccircle cx='23' cy='9' r='4'/%3E%3Ccircle cx='9' cy='23' r='4'/%3E%3Ccircle cx='23' cy='23' r='4'/%3E%3Cpath d='M9 9 23 23M23 9 9 23'/%3E%3C/g%3E%3C/svg%3E">
+<!-- PWA: installable on Android/desktop via the manifest; the apple-* tags
+     are iOS Safari's separate (older, non-manifest) mechanism for the same
+     "Add to Home Screen" standalone-app behavior. -->
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FPV Sim">
 <style>
   /* ── DESIGN TOKENS ──
      One palette for the whole product. The HUD was always cyan-on-near-black
@@ -3145,6 +3154,15 @@ window.addEventListener('gamepaddisconnected',()=>{
   if(inputSource==='gamepad') inputSource='keyboard';
   if(settingsOpen) el.noGp.style.display='block';
 });
+
+// ═══════════════════════════════════════════════
+//  PWA — installable + offline via sw.js. Registration itself needs no error
+//  UI: if it fails (unsupported browser, blocked, served over plain HTTP) the
+//  game still runs identically, it just won't be installable or work offline.
+// ═══════════════════════════════════════════════
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
 
 // ═══════════════════════════════════════════════
 //  START

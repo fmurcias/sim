@@ -1,12 +1,14 @@
 # FPV Sim
 
-A browser-based FPV (first-person view) drone racing simulator in **acro/balance mode**. No install, no build, any device, any gamepad — it's a single HTML file.
+A browser-based free FPV (first-person view) drone racing simulator in **acro/balance mode**. No build, no framework, any device, any gamepad — the whole simulator is one HTML file (plus a small manifest/service-worker/icon set that make it installable and playable offline, see below).
 
 ![alt text](assets/collage.png)
 
 ## Running it
 
-Open [index.html](index.html) directly in a browser.
+Open [index.html](index.html) directly in a browser — nothing to install, nothing to build.
+
+It also installs as an app (see [Installing](#installing--offline-use)) for a full-screen, offline-capable experience on both desktop and mobile.
 
 ## Controls
 
@@ -158,8 +160,25 @@ A live **analysis panel** below the sliders derives human-readable stats from th
 
 All settings persist automatically in your browser (`localStorage`) — no account or save file needed. Nothing leaves your machine.
 
+## Installing / offline use
+
+The site is a PWA (Progressive Web App): a **service worker** ([sw.js](sw.js)) caches the page and everything it needs — including the three.js library, which otherwise comes from a CDN — the first time you visit. After that, reloading or reopening the site works **with no internet connection at all**, whether or not you've formally "installed" it.
+
+Installing just adds a proper icon and drops the browser chrome (address bar, tabs) for a full-screen, app-like window:
+
+| Platform | How |
+|---|---|
+| **Android** (Chrome / Edge / Samsung Internet) | Tap **⋮ → Install app** (or the install banner Chrome shows automatically). Launches full-screen, locked to landscape. |
+| **Desktop** (Chrome / Edge, Windows / macOS / Linux / ChromeOS) | Click the **install icon** in the address bar (or **⋮ → Install FPV Sim…**). Opens in its own app window. |
+| **iOS / iPadOS** (Safari) | **Share → Add to Home Screen**. This is Apple's own mechanism — Safari doesn't show an automatic install prompt like Chrome does, so it's a manual step every time on a new device. |
+| **Firefox desktop** | No install button (Mozilla dropped desktop PWA install UI), but the site still works fully — including offline — in a regular tab. |
+
+You don't need to install it for the offline behavior — just visiting the page once while online is enough for the service worker to take over. Installing only changes how it's launched afterward.
+
+**Updating**: the service worker serves the cached copy instantly and re-fetches the latest version in the background for *next* time (a "stale-while-revalidate" cache), so you'll always be at most one visit behind the live site — no manual refresh trick needed.
+
 ## Notes
 
 The simulation runs on a **fixed 1/120s timestep** with an accumulator, so flight feel and collision accuracy don't change with your frame rate — a slow machine renders fewer frames rather than running the physics in slow motion or letting a fast drone tunnel through a gate bar.
 
-`three.js` is loaded from a CDN, so the first load needs a network connection (it's cached afterwards). If the download fails the page says so instead of showing a black screen.
+`three.js` is loaded from a CDN on first visit and cached by the service worker from then on (see [Installing / offline use](#installing--offline-use)). If the very first load fails to reach the CDN — no cache yet and no connection — the page says so instead of showing a black screen.
