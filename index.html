@@ -141,7 +141,13 @@
   #splash{position:fixed;inset:0;
     background:radial-gradient(ellipse at 30% 40%,#0d1a28 0%,var(--bg) 70%);
     display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99;
-    transition:opacity .35s ease}
+    transition:opacity .35s ease;
+    /* Safety net: body has overflow:hidden (no page scroll during flight), so
+       without its own scroll context a splash taller than the viewport — e.g. a
+       phone in landscape, where the max-width:640px query below doesn't fire
+       because WIDTH is generous even though HEIGHT is short — just gets centered
+       and clipped, with #btn-start unreachable and no way to scroll to it. */
+    overflow-y:auto}
   #splash.hiding{opacity:0;pointer-events:none}
   #splash::before{content:'';position:absolute;inset:0;
     background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(0,229,255,.045) 40px),
@@ -414,6 +420,26 @@
     .btn-label{display:none}
     .tstick{width:112px;height:112px}
     .tknob{width:40px;height:40px;margin:-20px 0 0 -20px}
+  }
+
+  /* A phone in landscape is wide (often >640px, so the query above never fires)
+     but short — the actual constraint the splash was missing a rule for. Shrinks
+     everything enough that it fits without needing the overflow-y:auto scroll
+     fallback above; on the rare device where it still doesn't fit, that fallback
+     is what makes #btn-start reachable at all. Keeps panels side-by-side (row) —
+     .splash-panel's flex-direction:column from the width query above is exactly
+     the wrong call for a height-constrained screen, so this overrides it back on
+     the (rare) small-and-short device where both queries match. */
+  @media (max-height:520px){
+    #splash{padding:14px 0}
+    #splash h1{font-size:22px;letter-spacing:5px;margin-bottom:2px}
+    #splash .subtitle{font-size:8px;letter-spacing:1.5px;margin-bottom:10px}
+    .splash-panel{flex-direction:row;gap:8px;margin-bottom:8px;padding:0 14px}
+    .splash-box{padding:6px 10px}
+    .splash-box .box-title{font-size:8px;margin-bottom:4px}
+    .tbl{font-size:10px}
+    .tbl .row{padding:2px 0}
+    #btn-start{padding:8px 30px;font-size:13px}
   }
 
   /* When the virtual sticks are showing they own the bottom corners, so the
@@ -1415,6 +1441,15 @@ const CRASH_RESPAWN_T=1.8;
 let collideGates=store.getBool(KEYS.collideGates,true);
 let collideTrees=store.getBool(KEYS.collideTrees,true);
 
+// Every respawn (crash recovery or a plain reset) that doesn't specify a position
+// lands here. 1.5m keeps the worst case (zero thrust — the idle=0% slider extreme)
+// under the ~8.5 m/s HARD_IMPACT_VY crash threshold, so a stationary drone settles
+// instead of re-crashing: idle thrust (phy.idleThrottle) is deliberately too weak
+// to hold altitude — "armed but not flying", not "hovering" — so any respawn point
+// meaningfully higher than this free-falls into another ground-impact crash if the
+// pilot isn't already on the throttle within about a second.
+const RESPAWN_ALT=1.5;
+
 // ── Respawn vs. restart ──
 // These used to be one function, so any crash silently threw away the whole run.
 // respawnDrone() only restores flyable state; resetRun() is the explicit restart
@@ -1424,13 +1459,17 @@ function respawnDrone(pos, quat){
   drone.thr=phy.idleThrottle;
   crashState=null;
   inp.throttle=0;
-  if(pos) drone.pos.copy(pos); else drone.pos.set(0,1.5,0);
+  if(pos) drone.pos.copy(pos); else drone.pos.set(0,RESPAWN_ALT,0);
   if(quat) drone.quat.copy(quat); else drone.quat.identity();
   hideCrashBanner();
 }
 
 // Put the drone back just short of the gate it was heading for, facing it, so
-// clipping gate 11 of 12 costs a few seconds instead of the entire lap.
+// clipping gate 11 of 12 costs a few seconds instead of the entire lap. See
+// RESPAWN_ALT above for why this uses a fixed low altitude, not the gate's own
+// (gates sit 3.6-13.2m up — see buildCircuit — and respawning there caused a
+// crash → respawn → free-fall → crash loop for anyone not immediately on the stick,
+// since the target gate hadn't advanced and every respawn repeated identically).
 const _respawnPos=new THREE.Vector3(), _respawnQuat=new THREE.Quaternion(),
       _AXIS_Y_WORLD=new THREE.Vector3(0,1,0);
 function respawnAtCurrentGate(){
@@ -1438,7 +1477,7 @@ function respawnAtCurrentGate(){
   const g=gates[nextGate%gates.length];
   // 9 m back along the gate's own facing axis (local -Z), clear of the frame.
   _respawnPos.set(g.sn*9, 0, g.cs*9).add(g.pos);
-  _respawnPos.y=Math.max(g.pos.y, 2.0);
+  _respawnPos.y=RESPAWN_ALT;
   const yaw=Math.atan2(g.pos.x-_respawnPos.x, g.pos.z-_respawnPos.z)+Math.PI;
   _respawnQuat.setFromAxisAngle(_AXIS_Y_WORLD, yaw);
   respawnDrone(_respawnPos,_respawnQuat);
