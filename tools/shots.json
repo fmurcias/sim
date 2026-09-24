@@ -1,0 +1,8 @@
+[
+  {"name": "spawn",      "pose": [0, 1.5, 0, 0, 0, 0], "wait": 3500},
+  {"name": "low-course", "pose": [-8, 3.5, 30, 200, -8, 0], "wait": 3000},
+  {"name": "high-view",  "pose": [0, 25, 70, 0, -18, 0], "wait": 3000},
+  {"name": "into-sun",   "pose": [0, 3, 0, -140, 25, 0], "wait": 3500},
+  {"name": "grass-skim", "eval": "__fpv.setPose(18, __fpv.terrain.groundAt(18,22)+0.45, 22, 35, -6, 0)", "wait": 3000},
+  {"name": "prop-wash",  "eval": "__fpv.setPose(-20, __fpv.terrain.groundAt(-20,-15)+0.9, -15, 60, -55, 0); __fpv.drone.thr=1", "wait": 3000}
+]
