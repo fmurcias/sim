@@ -7,7 +7,12 @@
 //    instanced.
 //  • Each variant is also baked into an impostor atlas (albedo + normals):
 //    trees beyond LOD distance — and the thousands in the surrounding woods —
-//    are lit, shadow-casting camera-facing cards.
+//    are lit, shadow-casting camera-facing cards that sway in the wind too.
+//  • Full trees are by far the most expensive thing in the frame (tens of
+//    thousands of alpha-tested leaf triangles each): a depth pre-pass makes
+//    their leaves shade each pixel once instead of once per leaf layer, and
+//    over the last few metres before the LOD distance the full tree and its
+//    card cross-fade with a complementary dither, so the swap never pops.
 //  • Colliders (trunk + canopy cylinders) are measured from each variant's
 //    real geometry and scaled per instance; a spatial hash keeps the crash
 //    test to the few trees near the drone.
@@ -43,6 +48,23 @@ export const vegUniforms = {
   uSunRadiance: { value: new THREE.Color(0, 0, 0) },
 };
 
+// Full tree ↔ card cross-fade. Each instance carries aLod = how much of it
+// is visible (set on the CPU every frame from its distance). Both sides use
+// the same per-pixel threshold, the full tree keeping the pixels below its
+// visibility and the card the rest, so together they always cover exactly
+// one tree — no gap, no double image.
+const LOD_BAND_MIN = 4;          // m
+const LOD_BAND_FRAC = 0.12;      // of the LOD distance
+const LOD_DITHER = `
+float lodDither(){ return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))); }`;
+
+// Inserts code after an include, and says so if three ever renames it —
+// a silently skipped patch would just look like a missing effect.
+function after(src, anchor, code) {
+  if (!src.includes(anchor)) console.warn('vegetation: shader anchor not found', anchor);
+  return src.replace(anchor, anchor + '\n' + code);
+}
+
 const WIND_PARS = `
 uniform float uTime; uniform vec2 uWindDir; uniform float uWindStrength;`;
 function windChunk(flutter, heightRef) {
@@ -75,7 +97,23 @@ const TRANS_FRAG = (k) => `
   totalEmissiveRadiance += diffuseColor.rgb * uSunRadiance * back * ${k.toFixed(3)};
 }`;
 
-function foliagePatch(key, { wind, flutter, heightRef, trans }) {
+// Card sway, in world space after the billboard is built (the card's local
+// y is 0..1, so the full-tree wind chunk can't be reused as is). Same phase
+// and amplitude as the full tree, so the swap doesn't freeze the crown.
+const BB_WIND = `
+{
+  float hN = clamp(transformed.y * bbH / 12.0, 0.0, 1.4);
+  float ph = dot(bbOrigin.xz, vec2(0.131, 0.173));
+  float gust = 0.6 + 0.4 * sin(uTime * 0.31 + ph * 0.2);
+  float sway = (sin(uTime * 1.25 + ph) * 0.6 + sin(uTime * 2.07 + ph * 1.7) * 0.3) * gust;
+  bbWorld.xz += uWindDir * sway * uWindStrength * hN * hN * 0.28;
+}`;
+
+/**
+ * lod: 'full' (a full-detail tree: keeps the dither pixels below aLod) or
+ * 'card' (an impostor: keeps the rest). bbWind: sway a billboard card.
+ */
+function foliagePatch(key, { wind, flutter, heightRef, trans, lod, bbWind }) {
   return {
     key,
     fn: shader => {
@@ -85,10 +123,23 @@ function foliagePatch(key, { wind, flutter, heightRef, trans }) {
           .replace('#include <common>', '#include <common>\n' + WIND_PARS)
           .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + windChunk(flutter, heightRef));
       }
+      if (bbWind) {
+        shader.vertexShader = after(shader.vertexShader, '#include <common>', WIND_PARS);
+        shader.vertexShader = after(shader.vertexShader, '// @bbWind', BB_WIND);
+      }
       if (trans) {
         shader.fragmentShader = shader.fragmentShader
           .replace('#include <common>', '#include <common>\n' + TRANS_PARS)
           .replace('#include <emissivemap_fragment>', TRANS_FRAG(trans));
+      }
+      if (lod) {
+        shader.vertexShader = after(shader.vertexShader, '#include <common>',
+          (lod === 'full' ? 'attribute float aLod;\n' : '') + 'varying float vLodVis;');
+        shader.vertexShader = after(shader.vertexShader, '#include <color_vertex>', 'vLodVis = aLod;');
+        const keep = lod === 'full' ? 'lodDither() < vLodVis' : 'lodDither() >= 1.0 - vLodVis';
+        shader.fragmentShader = after(shader.fragmentShader, '#include <common>', 'varying float vLodVis;' + LOD_DITHER);
+        shader.fragmentShader = after(shader.fragmentShader, '#include <clipping_planes_fragment>',
+          `if (vLodVis < 0.999 && !(${keep})) discard;`);
       }
     },
   };
@@ -107,12 +158,33 @@ function foliageDepthMaterial(map, heightRef, flutter) {
   return m;
 }
 
+// Leaf depth pre-pass. A tree crown is many layers of alpha-tested leaf
+// cards, and without it every layer runs the full PBR shader for the pixels
+// it covers — the nearest crowns were most of the frame. The pre-pass lays
+// down depth with a trivial shader (same wind, alpha test and LOD dither, so
+// the depths match), then the lit pass only shades the front leaf of each
+// pixel. It is pushed back a hair with polygon offset so the lit pass passes
+// LessEqual even if the two programs round a vertex differently. MSAA tiers
+// use alpha-to-coverage instead, where per-sample coverage doesn't mix with
+// this, so they skip it.
+function leafPrepassMaterial(map) {
+  const m = new THREE.MeshBasicMaterial({
+    name: 'LeavesPrepass', map, alphaTest: 0.5, side: THREE.DoubleSide, colorWrite: false, fog: false,
+    polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+  });
+  const patch = foliagePatch('leafPre', { wind: true, flutter: true, heightRef: 12, lod: 'full' });
+  m.onBeforeCompile = patch.fn;
+  m.customProgramCacheKey = () => 'leafPre';
+  return m;
+}
+
 // ── Impostor (billboard) shader patches ──
 // The card turns about its vertical axis to face whoever is rendering it —
 // the player's camera in the colour pass, the sun's shadow camera in the
 // depth pass (so the shadow is the crown's silhouette as seen from the sun).
 const BILLBOARD_PARS = `
 attribute float aCell;
+attribute float aLod;
 uniform float uCells;
 vec3 bbFacing(vec3 origin){
   vec3 d = cameraPosition - origin; d.y = 0.0;
@@ -124,10 +196,14 @@ vec3 bbOrigin = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 vec3 bbToCam = bbFacing(bbOrigin);
 vec3 bbRight = vec3(bbToCam.z, 0.0, -bbToCam.x);
 float bbW = length(instanceMatrix[0].xyz), bbH = length(instanceMatrix[1].xyz);
-vec3 bbWorld = bbOrigin + bbRight * transformed.x * bbW + vec3(0.0, transformed.y * bbH, 0.0);`;
+vec3 bbWorld = bbOrigin + bbRight * transformed.x * bbW + vec3(0.0, transformed.y * bbH, 0.0);
+// @bbWind`;
+// A card whose full tree is showing is pushed outside the clip volume, so
+// none of its triangles rasterise (nor cast a second shadow).
 const BILLBOARD_PROJECT = `
 vec4 mvPosition = viewMatrix * vec4(bbWorld, 1.0);
-gl_Position = projectionMatrix * mvPosition;`;
+gl_Position = projectionMatrix * mvPosition;
+if (aLod <= 0.0) gl_Position = vec4(0.0, 0.0, 2.0, 1.0);`;
 const BILLBOARD_WORLDPOS = `
 vec4 worldPosition = vec4(bbWorld, 1.0);`;
 const BILLBOARD_UV = `
@@ -188,11 +264,40 @@ export class Vegetation {
     this.forest = [];         // static far trees (same shape as trees)
     this.hash = new Map();
     this.visible = true;
-    this.fullMeshes = [];
-    this.lodTimer = 0;
-    this.lodFull = tier.treeDetail >= 2 ? 70 : 42;
-    this.maxFull = tier.treeDetail >= 2 ? 60 : 30;
+    this.all = [];            // trees + forest, in impostor-instance order
+    // Full-detail slots per variant (buffer size). The tier sets how many are
+    // used (treeMax); a tree that doesn't get a slot simply stays a card.
+    this.maxFull = 64;
+    this.setTier(tier);
     this.ready = null;
+  }
+
+  /**
+   * Quality tier: full-detail distance and count, and alpha-to-coverage with
+   * MSAA. The cross-fade ends at treeLod, so no tree beyond it is ever drawn
+   * in full — the band costs a few extra cards, never extra full trees.
+   * (Cards are a clear step down up close — flatter, darker, one fixed
+   * silhouette — so the distance is not pulled in for speed.)
+   */
+  setTier(tier) {
+    this.tier = tier;
+    const lod = tier.treeLod ?? 42;
+    this.lodFar = lod;
+    this.lodNear = Math.max(0, lod - Math.max(LOD_BAND_MIN, lod * LOD_BAND_FRAC));
+    this.fullCap = Math.min(this.maxFull, tier.treeMax ?? 30);
+    const a2c = (tier.msaa || 0) > 0;
+    const mats = this.variants.map(v => v.leaf);
+    if (this.impostorMat) mats.push(this.impostorMat);
+    for (const m of mats) if (m.alphaToCoverage !== a2c) { m.alphaToCoverage = a2c; m.needsUpdate = true; }
+    this.usePrepass = !a2c;
+    this._applyPrepass();
+  }
+
+  _applyPrepass() {
+    for (const v of this.variants) {
+      v.leaf.depthWrite = !this.usePrepass;
+      if (v.full) v.full.pre.visible = this.usePrepass && this.visible;
+    }
   }
 
   async init() {
@@ -250,7 +355,7 @@ export class Vegetation {
           name: 'Bark', map: bSrc.map, normalMap: bSrc.normalMap, aoMap: bSrc.aoMap,
           color: bSrc.color, roughness: 0.92, metalness: 0,
         });
-        register(m, [foliagePatch('bark', { wind: true, flutter: false, heightRef: 12, trans: 0 })]);
+        register(m, [foliagePatch('bark', { wind: true, flutter: false, heightRef: 12, trans: 0, lod: 'full' })]);
         markShared(m);
         barkMats.set(barkKey, m);
       }
@@ -261,13 +366,13 @@ export class Vegetation {
           name: 'Leaves', map, color: lSrc.color, side: THREE.DoubleSide, alphaTest: 0.5,
           alphaToCoverage: (this.tier.msaa || 0) > 0, roughness: 0.72, metalness: 0,
         });
-        register(m, [foliagePatch('leaves', { wind: true, flutter: true, heightRef: 12, trans: 0.22 })]);
+        register(m, [foliagePatch('leaves', { wind: true, flutter: true, heightRef: 12, trans: 0.22, lod: 'full' })]);
         markShared(m);
-        leafMats.set(leafKey, { mat: m, depth: markShared(foliageDepthMaterial(map, 12, true)) });
+        leafMats.set(leafKey, { mat: m, depth: markShared(foliageDepthMaterial(map, 12, true)), pre: markShared(leafPrepassMaterial(map)) });
       }
       const leaf = leafMats.get(leafKey);
       this.variants.push({
-        def, bark: barkMats.get(barkKey), leaf: leaf.mat, leafDepth: leaf.depth,
+        def, bark: barkMats.get(barkKey), leaf: leaf.mat, leafDepth: leaf.depth, leafPre: leaf.pre,
         branchGeo: bg, leafGeo: lg, col, radius, height: def.height,
         tris: (bg.index.count + lg.index.count) / 3,
       });
@@ -374,7 +479,7 @@ export class Vegetation {
       alphaToCoverage: (this.tier.msaa || 0) > 0, roughness: 0.8, metalness: 0, side: THREE.DoubleSide,
     });
     register(mat, [{ key: 'impostor', fn: sh => billboardPatch(sh, cells) },
-      foliagePatch('impTrans', { wind: false, trans: 0.15 })]);
+      foliagePatch('impTrans', { wind: false, trans: 0.15, lod: 'card', bbWind: true })]);
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: albedoRT.texture, alphaTest: 0.5 });
     depth.onBeforeCompile = sh => billboardPatch(sh, cells);
     depth.customProgramCacheKey = () => 'impDepth';
@@ -383,18 +488,30 @@ export class Vegetation {
   }
 
   _buildMeshes() {
-    // Full-detail instanced meshes per variant (filled by the LOD pass).
+    // Full-detail instanced meshes per variant (filled by the LOD pass). Bark
+    // and leaves share one matrix buffer and one visibility buffer.
     this.variants.forEach(v => {
       const bark = new THREE.InstancedMesh(v.branchGeo, v.bark, this.maxFull);
       const leaves = new THREE.InstancedMesh(v.leafGeo, v.leaf, this.maxFull);
+      leaves.instanceMatrix = bark.instanceMatrix;
       leaves.customDepthMaterial = v.leafDepth;
+      const pre = new THREE.InstancedMesh(v.leafGeo, v.leafPre, this.maxFull);
+      pre.instanceMatrix = bark.instanceMatrix;
+      pre.renderOrder = -1;                 // before every other opaque: terrain behind crowns is rejected early too
+      pre.count = 0; pre.frustumCulled = false;
+      this.scene.add(pre);
+      v.lodAttr = new THREE.InstancedBufferAttribute(new Float32Array(this.maxFull), 1).setUsage(THREE.DynamicDrawUsage);
+      v.branchGeo.setAttribute('aLod', v.lodAttr);
+      v.leafGeo.setAttribute('aLod', v.lodAttr);
       for (const m of [bark, leaves]) {
         m.count = 0; m.castShadow = true; m.receiveShadow = true;
         m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.scene.add(m);
       }
-      v.full = { bark, leaves };
+      v.full = { bark, leaves, pre };
     });
+    this.fullCount = new Int32Array(this.variants.length);
+    this._applyPrepass();
     // One impostor mesh for everything else (course trees far away + woods).
     const quad = new THREE.PlaneGeometry(1, 1);
     quad.translate(0, 0.5, 0);
@@ -409,14 +526,12 @@ export class Vegetation {
     const cap = Math.max(n, this.impostorCap * 2);
     if (this.impostors) { this.scene.remove(this.impostors); this.impostors.dispose(); }
     const geo = this.impostorGeo.clone();
-    const cell = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1);
-    cell.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('aCell', cell);
+    geo.setAttribute('aCell', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1));
+    geo.setAttribute('aLod', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
     const m = new THREE.InstancedMesh(geo, this.impostorMat, cap);
     m.customDepthMaterial = this.impostorDepth;
     m.castShadow = true; m.receiveShadow = true;
     m.frustumCulled = false; m.count = 0;
-    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.visible = this.visible;
     this.scene.add(m);
     this.impostors = m;
@@ -426,7 +541,7 @@ export class Vegetation {
   // ── Placement ──
   _addTree(list, vi, x, y, z, s, rot) {
     const v = this.variants[vi];
-    const t = { v: vi, x, y, z, s, rot, col: null };
+    const t = { v: vi, x, y, z, s, rot, col: null, m: null };
     if (v.def.collide) {
       const c = v.col, cs = Math.cos(rot), sn = Math.sin(rot);
       t.col = {
@@ -439,7 +554,8 @@ export class Vegetation {
     return t;
   }
 
-  _rehash() {
+  /** After placement changes: collider hash, and the (static) card instances. */
+  _placed() {
     this.hash.clear();
     const add = t => {
       if (!t.col) return;
@@ -447,6 +563,24 @@ export class Vegetation {
       let b = this.hash.get(key); if (!b) this.hash.set(key, b = []); b.push(t);
     };
     this.trees.forEach(add); this.forest.forEach(add);
+
+    // Every tree has a card, always in the buffer; only its visibility
+    // changes per frame. The full-detail matrix is cached per tree.
+    this.all = this.trees.concat(this.forest);
+    this._ensureImpostorCapacity(this.all.length);
+    const im = this.impostors, cell = im.geometry.attributes.aCell, lod = im.geometry.attributes.aLod;
+    const mat = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+    const Y = new THREE.Vector3(0, 1, 0);
+    this.all.forEach((t, i) => {
+      const v = this.variants[t.v];
+      pos.set(t.x, t.y, t.z);
+      im.setMatrixAt(i, mat.compose(pos, q.identity(), scl.set(v.card.w * t.s, v.card.h * t.s, 1)));
+      cell.array[i] = t.v;
+      lod.array[i] = 1;
+      t.m = mat.compose(pos, q.setFromAxisAngle(Y, t.rot), scl.setScalar(t.s)).toArray(new Float32Array(16));
+    });
+    im.count = this.all.length;
+    im.instanceMatrix.needsUpdate = cell.needsUpdate = lod.needsUpdate = true;
   }
 
   /** Trees and bushes scattered around the course (reshuffled with the world). */
@@ -472,8 +606,7 @@ export class Vegetation {
       this._addTree(this.trees, vi, x, terrain.groundAt(x, z), z, 0.7 + rng() * 0.8, rng() * Math.PI * 2);
       b++;
     }
-    this._rehash();
-    this.lodTimer = 0;
+    this._placed();
   }
 
   /** The surrounding woods, from the terrain's land-cover map (fixed per terrain). */
@@ -493,13 +626,13 @@ export class Vegetation {
       const vi = TREE_VARIANTS[Math.floor(rnd() * TREE_VARIANTS.length)];
       this._addTree(this.forest, vi, x, terrain.groundAt(x, z) - 0.2, z, 0.85 + rnd() * 0.55, rnd() * Math.PI * 2);
     }
-    this._rehash();
-    this.lodTimer = 0;
+    this._placed();
   }
 
   setVisible(v) {
     this.visible = v;
     this.variants.forEach(x => { x.full.bark.visible = x.full.leaves.visible = v; });
+    this._applyPrepass();
     if (this.impostors) this.impostors.visible = v;
   }
 
@@ -510,46 +643,40 @@ export class Vegetation {
       vegUniforms.uSunViewDir.value.copy(sun.dir).transformDirection(camera.matrixWorldInverse);
       vegUniforms.uSunRadiance.value.copy(sun.color).multiplyScalar(sun.illuminance / Math.PI);
     }
-    this.lodTimer -= dt;
-    if (this.lodTimer > 0 || !this.visible) return;
-    this.lodTimer = 0.2;
-    this._updateLod(camera.position);
+    if (this.visible && this.impostors) this._updateLod(camera.position);
   }
 
+  // Every frame (the cross-fade has to follow the camera smoothly): one
+  // distance per tree, a matrix copy for the handful of full trees, and the
+  // card visibility buffer re-uploaded only when something changed.
   _updateLod(p) {
-    const lod2 = this.lodFull * this.lodFull;
-    const full = this.variants.map(() => []);
-    const all = this.trees.length + this.forest.length;
-    this._ensureImpostorCapacity(all);
-    const im = this.impostors, cell = im.geometry.attributes.aCell;
-    const mat = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
-    const Y = new THREE.Vector3(0, 1, 0);
-    let nImp = 0, nFull = 0;
-    const consider = (t) => {
-      const dx = t.x - p.x, dz = t.z - p.z, d2 = dx * dx + dz * dz;
-      const v = this.variants[t.v];
-      if (d2 < lod2 && full[t.v].length < this.maxFull) { full[t.v].push(t); nFull++; return; }
-      // Far bushes are sub-pixel — skip them entirely.
-      if (!v.def.collide && d2 > 90 * 90) return;
-      pos.set(t.x, t.y, t.z); scl.set(v.card.w * t.s, v.card.h * t.s, 1);
-      im.setMatrixAt(nImp, mat.compose(pos, q.identity(), scl));
-      cell.array[nImp] = t.v;
-      nImp++;
-    };
-    this.trees.forEach(consider);
-    this.forest.forEach(consider);
-    im.count = nImp;
-    im.instanceMatrix.needsUpdate = true;
-    cell.needsUpdate = true;
-    this.variants.forEach((v, i) => {
-      const list = full[i];
-      list.forEach((t, k) => {
-        pos.set(t.x, t.y, t.z); q.setFromAxisAngle(Y, t.rot); scl.setScalar(t.s);
-        mat.compose(pos, q, scl);
-        v.full.bark.setMatrixAt(k, mat); v.full.leaves.setMatrixAt(k, mat);
-      });
-      v.full.bark.count = v.full.leaves.count = list.length;
-      v.full.bark.instanceMatrix.needsUpdate = v.full.leaves.instanceMatrix.needsUpdate = true;
+    const all = this.all, V = this.variants, counts = this.fullCount.fill(0);
+    const near = this.lodNear, far = this.lodFar, near2 = near * near, far2 = far * far, inv = 1 / (far - near);
+    const lod = this.impostors.geometry.attributes.aLod, la = lod.array;
+    let dirty = false, nImp = 0, nFull = 0;
+    for (let i = 0; i < all.length; i++) {
+      const t = all[i], dx = t.x - p.x, dz = t.z - p.z, d2 = dx * dx + dz * dz;
+      let card = 1;
+      if (d2 < far2) {
+        // 0 → full tree only, 1 → card only; smoothstep across the band.
+        let f = d2 <= near2 ? 0 : (Math.sqrt(d2) - near) * inv;
+        f = f * f * (3 - 2 * f);
+        const v = V[t.v], k = counts[t.v];
+        if (k < this.fullCap) {
+          v.full.bark.instanceMatrix.array.set(t.m, k * 16);
+          v.lodAttr.array[k] = 1 - f;
+          counts[t.v] = k + 1; nFull++;
+          card = f;
+        }
+      } else if (!V[t.v].def.collide && d2 > 90 * 90) card = 0;   // far bushes are sub-pixel
+      if (la[i] !== card) { la[i] = card; dirty = true; }
+      if (card > 0) nImp++;
+    }
+    if (dirty) lod.needsUpdate = true;
+    V.forEach((v, i) => {
+      const n = counts[i], was = v.full.bark.count;
+      v.full.bark.count = v.full.leaves.count = v.full.pre.count = n;
+      if (n || was) { v.full.bark.instanceMatrix.needsUpdate = true; v.lodAttr.needsUpdate = true; }
     });
     this.stats = { full: nFull, impostors: nImp };
   }

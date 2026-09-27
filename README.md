@@ -59,6 +59,7 @@ Click the mode badge (bottom-left of the HUD, or bottom-centre with the touch st
 - **Telemetry** (top-left): speed, altitude, throttle %, camera tilt, FOV.
 - **Gate + lap counter** (top-center): current gate / total gates, and the current lap number.
 - **Lap timer** (below the gate counter) — see [Lap timing](#lap-timing).
+- **Gate arrow** (below the lap timer, off by default) — a compass dial whose needle points to the next gate from the camera's point of view: up means straight ahead, sideways means turn that way, down means pitch down. It turns orange when the gate is behind you, shrinks to a dot when you're lined up, and shows the distance underneath. Enable it in **GENERAL** settings.
 - **Attitude Indicator (ADI)** — the circular artificial-horizon dial (bottom-right) showing roll and pitch.
 - **FPV attitude overlay** — a horizon bar across the center of the view (tilts with roll, slides with pitch) plus two side gauges for pitch and roll with a numeric readout. Toggle it on/off in **GENERAL** settings.
 - **Throttle bar** (left edge; hidden when the touch sticks are up, since the left stick shows it).
@@ -69,7 +70,7 @@ The keybind hint along the bottom fades out after ~15 seconds of flight. Press `
 
 ## Flying the circuit
 
-Fly through the numbered gates in order — passing through the center of the current gate advances you to the next one. The next gate's LED strip glows yellow, gates still to come glow a dim orange, and passed gates turn green. Clipping a gate's padded frame or its pole, hitting a tree, hitting the ground hard, or flying into the pilots' tents, flags, cones or floodlight towers triggers a crash.
+Fly through the numbered gates in order — passing through the center of the current gate advances you to the next one. The next gate glows yellow — a thicker LED strip plus a gently pulsing halo around its frame, visible from across the field even on LOW — while gates still to come glow a dim orange and passed gates turn green. Clipping a gate's padded frame or its pole, hitting a tree, hitting the ground hard, or flying into the pilots' tents, flags, cones or floodlight towers triggers a crash.
 
 The field is not flat: it has gentle relief, rolling hills beyond the course and a hazy ridge line on the horizon. Altitude (`ALT`) is measured above the ground directly below you.
 
@@ -161,19 +162,22 @@ Tilt and FOV are also bound to `↑`/`↓` and `←`/`→` while flying, and eve
 ### GENERAL
 
 - **Environment** — `MIDDAY`, `GOLDEN HOUR`, `OVERCAST` or `NIGHT`. Each is a real photographed HDR sky (Poly Haven, CC0) that lights the whole scene, sets the sun position and shadows, and tints the distant haze. NIGHT is moonlit, with floodlight towers around the course, glowing gate LEDs and grainier camera sensor noise. Each preset remembers its own "show trees" preference.
-- **Graphics quality** — one setting drives resolution, anti-aliasing, shadow cascades, ambient occlusion, camera effects and grass density. Defaults to LOW on every device (step up if your GPU has headroom — the `P` overlay shows the frame rate), and applies instantly:
+- **Graphics quality** — one setting drives resolution, anti-aliasing, shadow cascades, ambient occlusion, camera effects, grass density and how far trees stay full 3D models. Defaults to LOW on every device (step up if your GPU has headroom — the `P` overlay shows the frame rate), and applies instantly:
 
-  | Tier | Meant for | Shadows | Ambient occlusion | Grass | Notes |
-  |---|---|---|---|---|---|
-  | LOW | weak phones | none | none | none | no post-processing at all |
-  | MEDIUM | phones | 1 cascade | none | light | SMAA, lower render scale when frames run long |
-  | HIGH | laptops / integrated GPUs | 2 cascades | half-res | dense | 4× MSAA, lower render scale when frames run long |
-  | ULTRA | discrete GPUs | 3 cascades | full-res | densest | 4× MSAA, 2× pixel ratio |
+  | Tier | Meant for | Shadows | Ambient occlusion | Grass | Full 3D trees out to | Notes |
+  |---|---|---|---|---|---|---|
+  | LOW | weak GPUs, phones | none | none | none | 42 m | no post-processing at all, lower render scale when frames run long |
+  | MEDIUM | phones | 1 cascade | none | light | 42 m | SMAA, lower render scale when frames run long |
+  | HIGH | laptops / integrated GPUs | 2 cascades | half-res | dense | 70 m | 4× MSAA, lower render scale when frames run long |
+  | ULTRA | discrete GPUs | 3 cascades | full-res | densest | 70 m | 4× MSAA, 2× pixel ratio |
+
+  Beyond that distance each tree is drawn as a baked picture of itself (a card that turns to face you, lit and swaying like the real one); over the last few metres the two dissolve into each other, so the swap doesn't pop. The full trees' leaves are the most expensive thing on screen — many layers of leaf cards per pixel — so on LOW and MEDIUM a cheap depth pre-pass works out the front leaf first and the lighting runs once per pixel instead of once per layer. When the render scale drops (the `RES` line in the `P` overlay), the picture is upscaled and slightly softer; it climbs back as soon as there's headroom.
 
 - **Map** — appears only when captured real-world maps are installed (see [Captured maps](#captured-maps)). `FIELD` is the procedural flying field.
 - **Lap timing** — shows the stored best lap and a **CLEAR BEST** button.
 - **Randomize world on every reset** — when on, pressing `R` reshuffles gates and trees along with your position. Turn it off to keep the same layout (R only resets your position); reshuffle manually with the **RANDOMIZE NOW** button that appears. Default: on.
 - **Show attitude HUD (pitch/roll)** — toggles the FPV horizon bar and side gauges described above. Default: on.
+- **Show gate arrow** — toggles the compass dial that points to the next gate (see [HUD](#hud)). Default: off.
 - **Show trees** — draws the trees around the course and the woods beyond it. Hidden trees never collide, whatever "Collide with trees" is set to. Default: on, and each environment remembers your choice separately.
 - **Collide with gates** — when on, clipping a gate's frame or support pole triggers a crash instead of only counting a pass when you go through the center. Turn off to fly through gate frames freely. Default: on.
 - **Collide with trees** — when on, touching a tree's trunk or foliage triggers a crash. Turn off to fly through the scenery — handy for practicing lines without being punished for clipping trees. Default: on.

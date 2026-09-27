@@ -4,37 +4,39 @@
 //  vegetation density together. MSAA now lives in the post-processing
 //  render target instead of the WebGL context, so changing tier no longer
 //  needs a reload for anti-aliasing.
+//  treeLod / treeMax: distance (m) at which trees cross-fade from full 3D
+//  models to baked cards, and at most how many full trees per species.
 // ═══════════════════════════════════════════════
 import * as THREE from 'three';
 
 export const QUALITY_TIERS = {
   low: {
-    label: 'LOW', pixelRatio: 1, dynamicRes: null,
+    label: 'LOW', pixelRatio: 1, dynamicRes: [0.6, 1.0],
     post: false, msaa: 0, smaa: false,
     shadows: false, cascades: 1, shadowMap: 1024,
     ao: 0, motionBlurSamples: 0, bloom: false, lens: false,
-    grass: [], treeDetail: 0, skyRes: '2k', texRes: '1k', terrainSegments: 200, forest: 700,
+    grass: [], treeLod: 42, treeMax: 30, skyRes: '2k', texRes: '1k', terrainSegments: 200, forest: 700,
   },
   medium: {
     label: 'MEDIUM', pixelRatio: 1, dynamicRes: [0.7, 1.0],
     post: true, msaa: 0, smaa: true,
     shadows: true, cascades: 1, shadowMap: 1024,
     ao: 0, motionBlurSamples: 6, bloom: true, lens: true,
-    grass: [{ radius: 7, inner: 0, clumps: 7000 }, { radius: 18, inner: 6, clumps: 4000 }], treeDetail: 1, skyRes: '2k', texRes: '1k', terrainSegments: 256, forest: 1800,
+    grass: [{ radius: 7, inner: 0, clumps: 7000 }, { radius: 18, inner: 6, clumps: 4000 }], treeLod: 42, treeMax: 30, skyRes: '2k', texRes: '1k', terrainSegments: 256, forest: 1800,
   },
   high: {
     label: 'HIGH', pixelRatio: 1.5, dynamicRes: [0.75, 1.0],
     post: true, msaa: 4, smaa: false,
     shadows: true, cascades: 2, shadowMap: 2048,
     ao: 1, motionBlurSamples: 8, bloom: true, lens: true,
-    grass: [{ radius: 9, inner: 0, clumps: 20000 }, { radius: 30, inner: 8, clumps: 12000 }], treeDetail: 2, skyRes: '4k', texRes: '1k', terrainSegments: 400, forest: 4000,
+    grass: [{ radius: 9, inner: 0, clumps: 20000 }, { radius: 30, inner: 8, clumps: 12000 }], treeLod: 70, treeMax: 60, skyRes: '4k', texRes: '1k', terrainSegments: 400, forest: 4000,
   },
   ultra: {
     label: 'ULTRA', pixelRatio: 2, dynamicRes: null,
     post: true, msaa: 4, smaa: false,
     shadows: true, cascades: 3, shadowMap: 2048,
     ao: 2, motionBlurSamples: 12, bloom: true, lens: true,
-    grass: [{ radius: 11, inner: 0, clumps: 32000 }, { radius: 40, inner: 10, clumps: 20000 }], treeDetail: 2, skyRes: '4k', texRes: '1k', terrainSegments: 400, forest: 6500,
+    grass: [{ radius: 11, inner: 0, clumps: 32000 }, { radius: 40, inner: 10, clumps: 20000 }], treeLod: 70, treeMax: 60, skyRes: '4k', texRes: '1k', terrainSegments: 400, forest: 6500,
   },
 };
 

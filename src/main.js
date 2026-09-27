@@ -22,7 +22,7 @@ import { createCameraShake } from './render/fpvcam.js';
 // ═══════════════════════════════════════════════
 const KEYS={
   map:'fpv_map', phy:'fpv_phy', theme:'fpv_theme', trees:'fpv_show_trees_',
-  randomize:'fpv_world_randomize', hudOverlay:'fpv_hud_overlay',
+  randomize:'fpv_world_randomize', hudOverlay:'fpv_hud_overlay', gateArrow:'fpv_gate_arrow',
   collideGates:'fpv_collide_gates', collideTrees:'fpv_collide_trees',
   flightMode:'fpv_flight_mode', ctrlAdv:'fpv_ui_controller_adv', phyAdv:'fpv_ui_physics_adv',
   hints:'fpv_ui_hints',
@@ -158,7 +158,7 @@ lap-time lap-best lap-delta best-lap-disp map-modal map-card save-status save-ts
 wiz-btn no-gp db-slider db-disp axes-grid ch-body ap-grid preset-desc sound-btn fullscreen-btn \
 cfg-tilt-slider cfg-tilt-disp cfg-fov-slider cfg-fov-disp touch-controls tstick-l tstick-r \
 tknob-l tknob-r quality-select quality-note touch-select theme-select reset-btn save-btn \
-close-btn map-btn randomize-btn clear-best-btn reset-btn-hud'
+close-btn map-btn randomize-btn clear-best-btn reset-btn-hud gate-arrow'
   .split(/\s+/).forEach(id=>{
     // camelCase alias so `el.thrFill` reads better than el['thr-fill']
     const node=document.getElementById(id);
@@ -380,13 +380,31 @@ function ensurePost(q){
   if(env.preset) post.setEnvironment(env);
 }
 
+// Dynamic resolution: when frames run long the render scale steps down (the
+// HUD is DOM, so it stays sharp) and the canvas is upscaled — a real FPV feed
+// is soft anyway, so this costs far less realism than dropping frames.
+// Checked every 1.5 s so it never oscillates per frame.
+// A frame capped by vsync (60 Hz screen) reads ~16.7 ms whatever the GPU
+// load, so "is there headroom?" can't be read off the frame time; instead
+// the governor periodically *tries* a step up and keeps it only if frames
+// stay on budget, waiting twice as long after each failed try.
+const RES_BUDGET_MS=1000/58, RES_PROBE_MIN=4, RES_PROBE_MAX=60;
+// Very large screens (4K at 100% scaling) get a lower floor, so the
+// governor can still reach ~1 Mpx if that's what 60 fps takes.
+const RES_MIN_PIXELS=1.0e6;
+function basePixelRatio(q){ return Math.min(devicePixelRatio,q.pixelRatio); }
+let resScale=1, resTimer=0, resMs=1000/60;
+const resProbe={active:false, wait:RES_PROBE_MIN, since:0};
+
 // ── Quality ──
 function applyQuality(name){
   const q=QUALITY_TIERS[name]||QUALITY_TIERS.high;
   ensurePost(q);
-  renderer.setPixelRatio(Math.min(devicePixelRatio,q.pixelRatio));
+  resScale=1; resMs=1000/60; resProbe.active=false; resProbe.wait=RES_PROBE_MIN;
+  renderer.setPixelRatio(basePixelRatio(q));
   renderer.setSize(innerWidth, innerHeight);
   env.setTier(q);
+  vegetation.setTier(q);
   buildGrass(q);
   // LOW renders straight to the screen, so three tone-maps in the materials;
   // every other tier tone-maps (with auto exposure) in the post stack.
@@ -1256,6 +1274,85 @@ function drawFpvHud(rollRad,pitchRad){
 }
 
 // ═══════════════════════════════════════════════
+//  GATE ARROW — an optional compass dial under the lap timer whose needle
+//  points at the next gate as seen from the lens: up = straight ahead,
+//  right = turn right, down = pitch down. Worked out in camera space, so it
+//  stays right when rolled or inverted. The needle turns orange when the gate
+//  is behind you and shrinks to a dot once the gate is centred in the view.
+// ═══════════════════════════════════════════════
+const arrowCtx=el.gateArrow.getContext('2d');
+const ARROW_W=72, ARROW_H=86, ARROW_R=30;
+const ARROW_NEXT='#ffe21a', ARROW_BEHIND='#ff7a1a';   // next-gate LED / "turn around"
+let gateArrowOn=store.getBool(KEYS.gateArrow,false);
+{
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  el.gateArrow.width=ARROW_W*dpr; el.gateArrow.height=ARROW_H*dpr;
+  el.gateArrow.style.width=ARROW_W+'px'; el.gateArrow.style.height=ARROW_H+'px';
+  arrowCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+let lastArrowKey='';
+function applyGateArrow(){
+  el.gateArrow.style.display=gateArrowOn?'block':'none';
+  lastArrowKey='';
+}
+applyGateArrow();
+
+const _toGate=new THREE.Vector3(), _camInv=new THREE.Quaternion();
+function drawGateArrow(){
+  if(!gateArrowOn || !gates.length) return;
+  const g=gates[nextGate%gates.length];
+  _toGate.copy(g.pos).sub(cam.position);
+  const dist=_toGate.length();
+  _toGate.applyQuaternion(_camInv.copy(cam.quaternion).invert());  // +x right, +y up, -z ahead
+  const off=Math.acos(clamp(-_toGate.z/Math.max(dist,1e-6),-1,1)); // angle off the lens axis
+  const ang=Math.atan2(_toGate.x,_toGate.y);                        // 0 = up, clockwise
+  // Repaint only when something visible changed (half-degree / 1 m steps).
+  const key=Math.round(ang*115)+'|'+Math.round(off*115)+'|'+Math.round(dist);
+  if(key===lastArrowKey) return;
+  lastArrowKey=key;
+
+  const ctx=arrowCtx, cx=ARROW_W/2, cy=ARROW_R+4;
+  const col=off>Math.PI/2 ? ARROW_BEHIND : ARROW_NEXT;
+  ctx.clearRect(0,0,ARROW_W,ARROW_H);
+
+  // Dial, with a tick at the top marking "straight ahead".
+  ctx.beginPath(); ctx.arc(cx,cy,ARROW_R,0,Math.PI*2);
+  ctx.fillStyle='rgba(5,10,18,.55)'; ctx.fill();
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(0,229,255,.35)'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx,cy-ARROW_R+1); ctx.lineTo(cx,cy-ARROW_R+6);
+  ctx.strokeStyle='rgba(0,229,255,.7)'; ctx.stroke();
+
+  // Around dead centre the bearing swings wildly, so the needle fades out over
+  // the last few degrees and the centre dot takes over.
+  const k=THREE.MathUtils.smoothstep(off, 3*Math.PI/180, 12*Math.PI/180);
+  if(k>0){
+    const L=ARROW_R-5;
+    ctx.save();
+    ctx.translate(cx,cy); ctx.rotate(ang); ctx.globalAlpha=k;
+    ctx.beginPath();
+    ctx.moveTo(0,-L); ctx.lineTo(10,-L+14); ctx.lineTo(3.5,-L+11);
+    ctx.lineTo(3.5,9); ctx.lineTo(-3.5,9); ctx.lineTo(-3.5,-L+11); ctx.lineTo(-10,-L+14);
+    ctx.closePath();
+    ctx.lineJoin='round'; ctx.lineWidth=2; ctx.strokeStyle='rgba(0,0,0,.55)'; ctx.stroke();
+    ctx.fillStyle=col; ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.arc(cx,cy,3+3*(1-k),0,Math.PI*2);
+  ctx.fillStyle=col; ctx.fill();
+  if(k<1){
+    ctx.beginPath(); ctx.arc(cx,cy,11,0,Math.PI*2);
+    ctx.globalAlpha=1-k; ctx.lineWidth=1.5; ctx.strokeStyle=col; ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  ctx.font='bold 11px "Courier New",monospace';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const txt=Math.round(dist)+' m', ty=ARROW_H-9;
+  ctx.fillStyle='rgba(0,0,0,.7)'; ctx.fillText(txt,cx+1,ty+1);
+  ctx.fillStyle='#e8f6fa'; ctx.fillText(txt,cx,ty);
+}
+
+// ═══════════════════════════════════════════════
 //  HUD
 // ═══════════════════════════════════════════════
 // Every telemetry field is written at 60fps but only changes when its *rounded*
@@ -1287,6 +1384,7 @@ function updateHUD(){
   const pitchRad = Math.asin(clamp(_adiFwd.y,-1,1));        // + = nose up
   drawADI(rollRad, pitchRad);
   drawFpvHud(rollRad, pitchRad);
+  drawGateArrow();
   const rollDeg=Math.round(rollRad*180/Math.PI);
   const pitchDeg=Math.round(pitchRad*180/Math.PI);
   setText(el.adiRoll,'roll','R '+(rollDeg>0?'+':'')+rollDeg+'°');
@@ -1864,6 +1962,11 @@ bindToggle('fpvhud-toggle',fpvHudOn,v=>{
   store.setBool(KEYS.hudOverlay,v);
   if(!fpvHudOn) fpvCtx.clearRect(0,0,innerWidth,innerHeight);
 });
+bindToggle('gate-arrow-toggle',gateArrowOn,v=>{
+  gateArrowOn=v;
+  store.setBool(KEYS.gateArrow,v);
+  applyGateArrow();
+});
 
 // ── Graphics quality ─────────────────────────
 el.qualitySelect.value=quality;
@@ -2185,26 +2288,42 @@ function loop(){
 }
 
 const _sun={dir:null, color:null, illuminance:0};
-// Dynamic resolution (MEDIUM/HIGH): when frames run long the render scale
-// steps down (the HUD is DOM, so it stays sharp); it creeps back up when
-// there is headroom. Re-checked every 1.5 s so it never oscillates per frame.
-let resScale=1, resTimer=0;
-function governResolution(dt){
-  const q=QUALITY_TIERS[quality];
-  if(!q.dynamicRes || debugFreeze) return;
-  resTimer+=dt;
-  if(resTimer<1.5) return;
-  resTimer=0;
-  const ms=stats.getFrameMs(), budget=1000/58;
-  let next=resScale;
-  if(ms>budget*1.12) next=Math.max(q.dynamicRes[0], resScale-0.1);
-  else if(ms<budget*0.8) next=Math.min(q.dynamicRes[1], resScale+0.05);
-  if(Math.abs(next-resScale)<0.01) return;
-  resScale=next;
-  renderer.setPixelRatio(Math.min(devicePixelRatio,q.pixelRatio)*resScale);
+// Dynamic resolution governor — the why is next to its state, above applyQuality().
+function setResScale(v){
+  resScale=v;
+  renderer.setPixelRatio(basePixelRatio(QUALITY_TIERS[quality])*resScale);
   renderer.setSize(innerWidth,innerHeight);
   if(post) post.setSize(innerWidth,innerHeight);
   stats.set('RES', Math.round(resScale*100)+'%');
+}
+function governResolution(dt){
+  const q=QUALITY_TIERS[quality];
+  if(!q.dynamicRes || debugFreeze || settingsOpen) return;
+  // Its own frame-time average, blind to one-off stalls (a tab switch, a
+  // shader compile, a throttled background window): those aren't GPU load,
+  // and reacting to them would drop the resolution for nothing.
+  if(dt>0.1) return;
+  resMs+=(dt*1000-resMs)*0.08;
+  resTimer+=dt; resProbe.since+=dt;
+  if(resTimer<1.5) return;
+  resTimer=0;
+  const ms=resMs;
+  const px=innerWidth*innerHeight*basePixelRatio(q)**2;
+  const lo=Math.min(q.dynamicRes[0], Math.sqrt(RES_MIN_PIXELS/px)), hi=q.dynamicRes[1];
+  if(ms>RES_BUDGET_MS*1.12){
+    // Over budget. If this follows a probe, the probe failed: back off.
+    if(resProbe.active) resProbe.wait=Math.min(RES_PROBE_MAX, resProbe.wait*2);
+    resProbe.active=false; resProbe.since=0;
+    if(resScale>lo) setResScale(Math.max(lo, resScale-0.1));
+  } else if(ms<RES_BUDGET_MS*0.8 && resScale<hi){
+    setResScale(Math.min(hi, resScale+0.05));          // real headroom (high-refresh screen)
+  } else if(resProbe.active){
+    resProbe.active=false; resProbe.since=0;           // the step up held: keep it
+    resProbe.wait=RES_PROBE_MIN;
+  } else if(resScale<hi && resProbe.since>=resProbe.wait){
+    resProbe.active=true;
+    setResScale(Math.min(hi, resScale+0.05));
+  }
 }
 
 function renderFrame(dt){
@@ -2225,7 +2344,9 @@ function renderFrame(dt){
     vegetation.update(cam, dt, _sun);
     if(vegetation.stats) stats.set('TREES', vegetation.stats.full+' full · '+vegetation.stats.impostors+' cards');
   }
-  if(post && QUALITY_TIERS[quality].post) post.render(dt);
+  const hdr=!!(post && QUALITY_TIERS[quality].post);
+  gateKit.update(performance.now()/1000, cam.position, hdr ? env.staticExposure : null);
+  if(hdr) post.render(dt);
   else renderer.render(scene,cam);
   stats.frame(dt);
 }

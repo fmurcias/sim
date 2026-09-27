@@ -13,11 +13,15 @@
 import * as THREE from 'three';
 import { fogUniforms, FOG_GLSL } from './materials.js';
 
+// z = w puts the dome exactly on the far plane, so it can be drawn *after*
+// the opaque scene with a depth test: only pixels nothing else covered pay
+// for the sky shader (it used to shade the whole screen, then terrain and
+// trees painted over half of it).
 const VERT = /* glsl */`
 varying vec3 vDir;
 void main(){
   vDir = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  gl_Position = (projectionMatrix * modelViewMatrix * vec4(position, 1.0)).xyww;
 }`;
 
 const FRAG = /* glsl */`
@@ -82,7 +86,7 @@ function makeSkyMaterial() {
     },
     side: THREE.BackSide,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,             // LessEqual against the cleared far plane
     fog: false,
   });
 }
@@ -123,8 +127,8 @@ export class SkyDome {
     this.material = makeSkyMaterial();
     this.mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 32), this.material);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = -1000;
-    this.mesh.scale.setScalar(500);   // anywhere inside the camera far plane works (depth test is off)
+    this.mesh.renderOrder = 1000;     // last among opaques, before transparents
+    this.mesh.scale.setScalar(500);   // any size works: the vertex shader pins it to the far plane
     this.mesh.name = 'SkyDome';
     // The IBL copy lives in its own scene, rendered only when the preset changes.
     this.iblMaterial = makeSkyMaterial();

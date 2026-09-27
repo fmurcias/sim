@@ -125,23 +125,72 @@ function makeNumberTexture(n) {
   return t;
 }
 
+// Signed distance to a rounded square (negative inside), same shape as
+// RoundedSquareCurve.
+function sdRoundedSquare(x, y, half, r) {
+  const qx = Math.abs(x) - (half - r), qy = Math.abs(y) - (half - r);
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+// Glow for the next gate, in the gate plane: a tight band hugging the LED
+// strip, a softer spill into the opening, a faint veil across it and a rim
+// outside the frame. The band under the tube is always hidden by the tube
+// itself, so it is simply held at full strength.
+function makeHaloTexture(extent, ledHalf, ledR, frameOuter) {
+  const S = 256;
+  const data = new Uint8Array(S * S * 4);
+  const peak = 0.9 + 0.35 + 0.07;
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const px = ((x + 0.5) / S * 2 - 1) * extent, py = ((y + 0.5) / S * 2 - 1) * extent;
+    const d = sdRoundedSquare(px, py, ledHalf, ledR);
+    let v;
+    if (d < 0) v = (0.9 * Math.exp(d / 0.12) + 0.35 * Math.exp(d / 0.6) + 0.07) / peak;
+    else if (d < frameOuter - ledHalf) v = 1;
+    else v = 0.5 * Math.exp(-(d - (frameOuter - ledHalf)) / 0.3);
+    // Fade to nothing at the quad's border so its edge never shows.
+    const edge = Math.min(extent - Math.abs(px), extent - Math.abs(py));
+    v *= THREE.MathUtils.smoothstep(edge, 0, 0.35);
+    const i = (y * S + x) * 4;
+    data[i] = data[i + 1] = data[i + 2] = Math.round(v * 255); data[i + 3] = 255;
+  }
+  const t = new THREE.DataTexture(data, S, S);
+  t.colorSpace = THREE.NoColorSpace;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
 export const LED_STATES = {
   upcoming: { color: 0xff5a10, intensity: 1.5 },
   next:     { color: 0xffe21a, intensity: 60 },
   passed:   { color: 0x19ff5a, intensity: 6 },
 };
 
+// Halo brightness. With the post stack it is scene light after exposure (so it
+// reads the same at midday and at night, and blooms); at LOW it is added
+// straight onto the finished picture.
+const HALO_LEVEL_HDR = 1.6;
+const HALO_LEVEL_DISPLAY = 1.0;
+const HALO_PULSE_HZ = 1.1;
+
 export function createGateKit({ GATE_R, T_FRAME, POST_R }) {
   const frameCurve = new RoundedSquareCurve(GATE_R, CORNER_R);
   const ledCurve = new RoundedSquareCurve(GATE_R - T_FRAME * 0.42, CORNER_R * 0.6);
   const geoFrame = new THREE.TubeGeometry(frameCurve, 240, T_FRAME / 2, 18, true);
   const geoLed = new THREE.TubeGeometry(ledCurve, 240, 0.045, 8, true);
+  // The next gate gets a fatter strip: at racing distance the normal one is
+  // about a pixel wide.
+  const geoLedNext = new THREE.TubeGeometry(ledCurve, 240, 0.08, 8, true);
   const geoPole = new THREE.CylinderGeometry(POST_R, POST_R, 1, 14);
   const geoBase = new THREE.CylinderGeometry(0.55, 0.62, 0.07, 24);
   const geoBag = new THREE.CapsuleGeometry(0.16, 0.42, 4, 10);
   geoBag.rotateZ(Math.PI / 2);
   const geoBoard = new THREE.BoxGeometry(1.25, 0.94, 0.05);
-  markShared(geoFrame, geoLed, geoPole, geoBase, geoBag, geoBoard);
+  const haloExtent = GATE_R + T_FRAME / 2 + 1.0;
+  const geoHalo = new THREE.PlaneGeometry(haloExtent * 2, haloExtent * 2);
+  markShared(geoFrame, geoLed, geoLedNext, geoPole, geoBase, geoBag, geoBoard, geoHalo);
 
   const fabric = makeFabricMaps();
   // ~0.5 m checks along the path, two around the tube.
@@ -168,6 +217,28 @@ export function createGateKit({ GATE_R, T_FRAME, POST_R }) {
     }));
   }
   markShared(matFabric, matPole, matBase, matBag, fabric.map, fabric.normalMap, ...Object.values(ledMats));
+
+  // One halo, handed to whichever gate is next. Additive and unlit, so it
+  // shows at LOW (no bloom) and feeds the bloom on the other tiers. No fog:
+  // it is a race aid and should carry across the field.
+  // It is never tone-mapped or sRGB-encoded on its own: both curves lift
+  // faint values a lot, which turned the veil over the opening into a
+  // yellow wash at LOW. With the post stack the target is linear anyway,
+  // and the stack tone-maps the sum.
+  const haloColor = new THREE.Color(LED_STATES.next.color);
+  const matHalo = new THREE.MeshBasicMaterial({
+    name: 'GateHalo', color: haloColor.clone(),
+    map: makeHaloTexture(haloExtent, GATE_R - T_FRAME * 0.42, CORNER_R * 0.6, GATE_R + T_FRAME / 2),
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    side: THREE.DoubleSide, fog: false, toneMapped: false,
+  });
+  matHalo.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <colorspace_fragment>', '');
+  };
+  markShared(matHalo, matHalo.map);
+  const halo = new THREE.Mesh(geoHalo, matHalo);
+  halo.renderOrder = 10;
+  const _haloPos = new THREE.Vector3();
 
   const boardMats = new Map();
   function boardMaterial(n) {
@@ -220,8 +291,25 @@ export function createGateKit({ GATE_R, T_FRAME, POST_R }) {
 
   function setState(g, state) {
     g.led.material = ledMats[state] || ledMats.upcoming;
+    g.led.geometry = state === 'next' ? geoLedNext : geoLed;
+    if (state === 'next') g.group.add(halo);
+    else if (halo.parent === g.group) g.group.remove(halo);
     g.state = state;
   }
 
-  return { build, setState, ledMats };
+  /**
+   * Per frame. `exposure` is the scene's reference exposure when the post
+   * stack is on (HDR), or null at LOW, where the halo is added in display
+   * space. It breathes gently to catch the eye, and fades out as you fly
+   * through so the veil never washes over the view.
+   */
+  function update(time, cameraPos, exposure) {
+    if (!halo.parent) return;
+    const pulse = 0.8 + 0.2 * Math.sin(time * Math.PI * 2 * HALO_PULSE_HZ);
+    const near = THREE.MathUtils.smoothstep(halo.getWorldPosition(_haloPos).distanceTo(cameraPos), 1.5, 7);
+    const level = exposure == null ? HALO_LEVEL_DISPLAY : HALO_LEVEL_HDR / Math.max(exposure, 1e-4);
+    matHalo.color.copy(haloColor).multiplyScalar(level * pulse * near);
+  }
+
+  return { build, setState, update, ledMats };
 }

@@ -72,6 +72,7 @@
   @keyframes lapflash{0%{transform:scale(1.25);color:#fff}100%{transform:scale(1);color:var(--accent)}}
   #lap-sub{font-size:10px;letter-spacing:1.5px;color:var(--fg-dim);display:flex;gap:10px}
   #lap-delta{font-variant-numeric:tabular-nums}
+  #gate-arrow{position:absolute;top:96px;left:50%;transform:translateX(-50%);display:none}
   #lap-delta.ahead{color:var(--ok)}
   #lap-delta.behind{color:var(--danger)}
 
@@ -522,6 +523,7 @@
   </svg>
   <div id="thr-bar"><div id="thr-fill"></div></div>
   <div id="gate-hud">GATE <span id="gnum">1</span> / <span id="gtot">0</span> · LAP <span id="lapnum">1</span></div>
+  <canvas id="gate-arrow"></canvas>
 
   <!-- Lap timing -->
   <div id="lap-hud">
@@ -887,7 +889,7 @@
       <span id="quality-note" style="font-size:12px;color:var(--fg-faint)"></span>
     </div>
     <p class="hint" id="hint-quality">
-      ► Drives resolution, anti-aliasing, shadow cascades, ambient occlusion, the camera effects and grass density together. MEDIUM and HIGH also lower the render resolution on their own when the frame rate drops. ULTRA is for a discrete GPU; drop to LOW on a weak phone — it skips the post-processing entirely. Defaults to LOW. Press P while flying for a performance readout.
+      ► Drives resolution, anti-aliasing, shadow cascades, ambient occlusion, the camera effects and grass density together. LOW, MEDIUM and HIGH also lower the render resolution on their own when the frame rate drops, and climb back when there's headroom. Higher tiers keep trees as full 3D models further away. ULTRA is for a discrete GPU; drop to LOW on a weak phone — it skips the post-processing entirely. Defaults to LOW. Press P while flying for a performance readout.
     </p>
 
     <div class="sec-title" style="margin-top:16px">LAP TIMING
@@ -932,9 +934,13 @@
         <input type="checkbox" class="inv-chk" id="fpvhud-toggle" checked>
         Show attitude HUD (pitch / roll)
       </label>
+      <label class="chk-lbl">
+        <input type="checkbox" class="inv-chk" id="gate-arrow-toggle">
+        Show gate arrow (points to the next gate)
+      </label>
     </div>
     <p class="hint" id="hint-fpvhud">
-      ► Draws a horizon bar across the centre of the view that tilts with roll and slides with pitch, flanked by two vertical gauges whose dots track the current pitch and roll angles. Turn it off for a clean, uncluttered FPV feed.
+      ► Draws a horizon bar across the centre of the view that tilts with roll and slides with pitch, flanked by two vertical gauges whose dots track the current pitch and roll angles. Turn it off for a clean, uncluttered FPV feed. The gate arrow is a small dial under the lap timer: its needle points to the next gate from the camera's view (up = straight ahead, turns orange when the gate is behind you, shrinks to a dot when you're lined up) with the distance below it. Off by default.
     </p>
 
     <div class="sec-title" style="margin-top:16px">SCENERY
