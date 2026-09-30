@@ -380,27 +380,112 @@ function ensurePost(q){
   if(env.preset) post.setEnvironment(env);
 }
 
-// Dynamic resolution: when frames run long the render scale steps down (the
-// HUD is DOM, so it stays sharp) and the canvas is upscaled — a real FPV feed
-// is soft anyway, so this costs far less realism than dropping frames.
-// Checked every 1.5 s so it never oscillates per frame.
-// A frame capped by vsync (60 Hz screen) reads ~16.7 ms whatever the GPU
-// load, so "is there headroom?" can't be read off the frame time; instead
-// the governor periodically *tries* a step up and keeps it only if frames
-// stay on budget, waiting twice as long after each failed try.
-const RES_BUDGET_MS=1000/58, RES_PROBE_MIN=4, RES_PROBE_MAX=60;
+// ── Shader warm-up ──
+// three builds a material's shader program the first time it is drawn, and
+// on a laptop GPU that takes 100–300 ms: a visible stall. Anything not on
+// screen the moment you take off (full-detail trees, the next-gate glow,
+// prop-wash dust…) used to pay that mid-flight, the first time it appeared,
+// and a quality or environment change rebuilt dozens at once. precompile()
+// builds every program in the scene up front — hidden objects and empty
+// instanced meshes included — while the loading screen or the settings menu
+// is up. compileAsync hands the work to the driver's parallel compiler where
+// there is one (KHR_parallel_shader_compile), so the page doesn't freeze.
+function precompile(){
+  const q=QUALITY_TIERS[quality];
+  const prev=renderer.getRenderTarget();
+  // Programs differ between drawing into the post stack's HDR buffer and
+  // straight to the screen (tone mapping, output colour space).
+  renderer.setRenderTarget(post && q.post ? post.composer.inputBuffer : null);
+  let done;
+  try{ done=renderer.compileAsync(scene, cam); }
+  finally{ renderer.setRenderTarget(prev); }
+  return done.catch(err=>console.warn('shader warm-up:', err));
+}
+
+// After an environment or quality change the settings menu is open and
+// covers the view, so drawing pauses until the new programs are built:
+// drawing with a half-built program forces the compile to finish right
+// there, which froze the page (and the menu) for over a second.
+let shaderWarmup=null;
+function warmupAfter(ready){
+  const w=ready.then(()=>precompile()).finally(()=>{ if(shaderWarmup===w) shaderWarmup=null; });
+  shaderWarmup=w;
+  return w;
+}
+
+// One real frame under the loading screen, with frustum culling off and
+// every full-detail tree mesh drawing: it builds what compileAsync can't
+// reach (post-processing passes, shadow-pass variants) and uploads every
+// mesh and texture to the GPU. Otherwise the first look at the pilots' tents
+// or a gate's number board cost a ~40 ms upload in flight.
+function warmupFrame(){
+  const culled=[];
+  scene.traverse(o=>{ if(o.frustumCulled && (o.isMesh || o.isPoints)){ o.frustumCulled=false; culled.push(o); } });
+  env.update();
+  vegetation.touchAll();
+  if(post && QUALITY_TIERS[quality].post) post.render(1/60);
+  else renderer.render(scene,cam);
+  culled.forEach(o=>{ o.frustumCulled=true; });
+}
+
+// Dynamic resolution: when the GPU can't keep up, the render scale steps
+// down (the HUD is DOM, so it stays sharp) and the canvas is upscaled — a
+// real FPV feed is soft anyway, so this costs far less realism than dropping
+// frames. But every change is itself a stall (the canvas, and on MEDIUM+
+// every post-processing buffer, is reallocated: ~50 ms on LOW, ~400 ms on
+// MEDIUM), so it must change rarely and only when it will help:
+//  • With GPU timing (EXT_disjoint_timer_query_webgl2 — Chrome/Edge on
+//    desktop) the governor sees how long the GPU really takes. It drops the
+//    scale only when frames are slow *and* the GPU is the bottleneck, and
+//    raises it only when the bigger frame is measured to fit — straight to
+//    the right scale, never by trial and error.
+//  • Without it, a frame capped by vsync reads ~16.7 ms whatever the load,
+//    so headroom is invisible: it steps down after sustained overload, and
+//    tries a step up only after 30 s of steady frames, backing off to
+//    5 minutes after each failed try.
+const RES_BUDGET_MS=1000/58, RES_CHECK_S=2;
+const RES_GPU_TARGET=0.7;                 // aim the GPU at 70% of the frame budget
+const RES_PROBE_MIN=30, RES_PROBE_MAX=300;
 // Very large screens (4K at 100% scaling) get a lower floor, so the
 // governor can still reach ~1 Mpx if that's what 60 fps takes.
 const RES_MIN_PIXELS=1.0e6;
 function basePixelRatio(q){ return Math.min(devicePixelRatio,q.pixelRatio); }
-let resScale=1, resTimer=0, resMs=1000/60;
+let resScale=1, resTimer=0, resMs=1000/60, resSlow=0;
 const resProbe={active:false, wait:RES_PROBE_MIN, since:0};
+
+// GPU frame timer: one TIME_ELAPSED query around each frame's rendering,
+// read back a few frames later without ever waiting on the GPU.
+const gpuTimer=(()=>{
+  const gl=renderer.getContext();
+  const ext=gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  if(!ext) return null;
+  const pending=[];
+  let active=null, ms=0, n=0;
+  return {
+    begin(){ if(active || pending.length>4) return; active=gl.createQuery(); gl.beginQuery(ext.TIME_ELAPSED_EXT, active); },
+    end(){ if(!active) return; gl.endQuery(ext.TIME_ELAPSED_EXT); pending.push(active); active=null; },
+    poll(){
+      while(pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)){
+        const q=pending.shift();
+        if(!gl.getParameter(ext.GPU_DISJOINT_EXT)){       // a disjoint result is garbage
+          const v=gl.getQueryParameter(q, gl.QUERY_RESULT)/1e6;
+          ms = n ? ms+(v-ms)*0.1 : v; n++;
+        }
+        gl.deleteQuery(q);
+      }
+    },
+    /** Smoothed GPU ms per frame, or null until there are enough samples. */
+    get ms(){ return n>=60 ? ms : null; },   // ~1 s of frames: a steadier first reading
+    reset(){ n=0; },
+  };
+})();
 
 // ── Quality ──
 function applyQuality(name){
   const q=QUALITY_TIERS[name]||QUALITY_TIERS.high;
   ensurePost(q);
-  resScale=1; resMs=1000/60; resProbe.active=false; resProbe.wait=RES_PROBE_MIN;
+  resScale=1; resMs=1000/60; resSlow=0; resProbe.active=false; resProbe.wait=RES_PROBE_MIN; resProbe.since=0;
+  gpuTimer?.reset();
   renderer.setPixelRatio(basePixelRatio(q));
   renderer.setSize(innerWidth, innerHeight);
   env.setTier(q);
@@ -432,6 +517,10 @@ function applyEnvironment(name){
     renderer.toneMappingExposure=QUALITY_TIERS[quality].post ? 1 : env.staticExposure;
     if(post) post.setEnvironment(env);
   });
+  // Floodlights (night) change the light count, and a quality change
+  // re-patches materials: both mean new programs. Build them now, while the
+  // settings menu is still open, not on the first frame of flight.
+  if(window.__fpv?.ready) warmupAfter(envReady);
   return envReady;
 }
 applyEnvironment(theme);
@@ -2295,39 +2384,58 @@ function setResScale(v){
   renderer.setSize(innerWidth,innerHeight);
   if(post) post.setSize(innerWidth,innerHeight);
   stats.set('RES', Math.round(resScale*100)+'%');
+  gpuTimer?.reset();                     // judge the new scale on its own frames
+  resSlow=0; resProbe.since=0;
 }
 function governResolution(dt){
   const q=QUALITY_TIERS[quality];
   if(!q.dynamicRes || debugFreeze || settingsOpen) return;
   // Its own frame-time average, blind to one-off stalls (a tab switch, a
-  // shader compile, a throttled background window): those aren't GPU load,
-  // and reacting to them would drop the resolution for nothing.
+  // throttled background window): those aren't GPU load, and reacting to
+  // them would resize — i.e. stall — for nothing.
   if(dt>0.1) return;
   resMs+=(dt*1000-resMs)*0.08;
   resTimer+=dt; resProbe.since+=dt;
-  if(resTimer<1.5) return;
+  if(resTimer<RES_CHECK_S) return;
   resTimer=0;
-  const ms=resMs;
   const px=innerWidth*innerHeight*basePixelRatio(q)**2;
   const lo=Math.min(q.dynamicRes[0], Math.sqrt(RES_MIN_PIXELS/px)), hi=q.dynamicRes[1];
-  if(ms>RES_BUDGET_MS*1.12){
-    // Over budget. If this follows a probe, the probe failed: back off.
-    if(resProbe.active) resProbe.wait=Math.min(RES_PROBE_MAX, resProbe.wait*2);
-    resProbe.active=false; resProbe.since=0;
-    if(resScale>lo) setResScale(Math.max(lo, resScale-0.1));
-  } else if(ms<RES_BUDGET_MS*0.8 && resScale<hi){
-    setResScale(Math.min(hi, resScale+0.05));          // real headroom (high-refresh screen)
-  } else if(resProbe.active){
-    resProbe.active=false; resProbe.since=0;           // the step up held: keep it
-    resProbe.wait=RES_PROBE_MIN;
-  } else if(resScale<hi && resProbe.since>=resProbe.wait){
+  const slow=resMs>RES_BUDGET_MS*1.12;
+  resSlow=slow ? resSlow+1 : 0;
+  if(gpuTimer){
+    const gpu=gpuTimer.ms;
+    if(gpu==null) return;                  // still collecting samples
+    // GPU time scales with pixel count, i.e. with scale². Resize only when
+    // the ideal scale is well away from the current one (each change stalls).
+    const ideal=Math.min(hi, Math.max(lo, resScale*Math.sqrt(RES_GPU_TARGET*RES_BUDGET_MS/gpu)));
+    // Over budget on the GPU alone means 60 fps can't hold, whatever the
+    // frame clock says (the GPU can fall behind before rAF slows down); slow
+    // frames with the GPU nearly full mean it's a big part of the problem.
+    // Slow frames with an idle GPU are the CPU's doing: a resize won't help.
+    const overloaded=gpu>RES_BUDGET_MS || (slow && gpu>RES_BUDGET_MS*0.8);
+    if(overloaded && ideal<resScale-0.05) setResScale(Math.max(lo, Math.floor(ideal*20)/20));
+    else if(!slow && ideal>=resScale+0.1) setResScale(Math.min(hi, resScale+0.2, Math.floor(ideal*20)/20));
+    return;
+  }
+  // No GPU timing.
+  if(resSlow>=2){
+    if(resProbe.active) resProbe.wait=Math.min(RES_PROBE_MAX, resProbe.wait*2);   // the try failed
+    resProbe.active=false;
+    if(resScale>lo) setResScale(Math.max(lo, resScale-0.15));
+  } else if(resMs<RES_BUDGET_MS*0.8 && resScale<hi){
+    setResScale(Math.min(hi, resScale+0.1));            // visible headroom (high-refresh screen)
+  } else if(resProbe.active && !slow && resProbe.since>=RES_CHECK_S*2){
+    resProbe.active=false; resProbe.wait=RES_PROBE_MIN;  // the step up held: keep it
+  } else if(!resProbe.active && !slow && resScale<hi && resProbe.since>=resProbe.wait){
     resProbe.active=true;
-    setResScale(Math.min(hi, resScale+0.05));
+    setResScale(Math.min(hi, resScale+0.1));
   }
 }
 
 function renderFrame(dt){
+  if(shaderWarmup && settingsOpen) return;   // see warmupAfter()
   renderer.info.reset();
+  gpuTimer?.poll();
   governResolution(dt);
   env.update();
   // Prop wash only while armed and flying; it scales with thrust.
@@ -2346,9 +2454,12 @@ function renderFrame(dt){
   }
   const hdr=!!(post && QUALITY_TIERS[quality].post);
   gateKit.update(performance.now()/1000, cam.position, hdr ? env.staticExposure : null);
+  gpuTimer?.begin();
   if(hdr) post.render(dt);
   else renderer.render(scene,cam);
+  gpuTimer?.end();
   stats.frame(dt);
+  if(gpuTimer?.ms!=null) stats.set('GPU', gpuTimer.ms.toFixed(1)+' ms');
 }
 
 // ═══════════════════════════════════════════════
@@ -2461,6 +2572,7 @@ const mapsReady=loadMapIndex().then(list=>{
 window.__fpv={
   ready:false, THREE, renderer, scene, cam, env, drone, gates, vegetation, terrain, droneShadow,
   get post(){ return post; },
+  get res(){ return {scale:resScale, frameMs:resMs, gpuMs:gpuTimer ? gpuTimer.ms : undefined}; },
   setPose(x,y,z,yawDeg=0,pitchDeg=0,rollDeg=0){
     drone.pos.set(x,y,z); drone.vel.set(0,0,0); drone.omega.set(0,0,0);
     drone.quat.setFromEuler(new THREE.Euler(pitchDeg*Math.PI/180, yawDeg*Math.PI/180, rollDeg*Math.PI/180,'YXZ'));
@@ -2488,7 +2600,10 @@ window.__fpv={
 
 // Assets (sky, textures) load asynchronously; FLY stays disabled until the
 // first environment is ready so the first frame is never an unlit scene.
-Promise.all([envReady, terrainReady, vegReady, mapsReady]).then(()=>{
+Promise.all([envReady, terrainReady, vegReady, mapsReady]).then(async ()=>{
+  el.btnStart.textContent='PREPARING SHADERS…';
+  await precompile();
+  warmupFrame();
   el.btnStart.disabled=false;
   el.btnStart.textContent='▶ FLY';
   el.loadBar?.classList.add('done');

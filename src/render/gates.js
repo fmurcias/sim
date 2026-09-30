@@ -231,6 +231,7 @@ export function createGateKit({ GATE_R, T_FRAME, POST_R }) {
     map: makeHaloTexture(haloExtent, GATE_R - T_FRAME * 0.42, CORNER_R * 0.6, GATE_R + T_FRAME / 2),
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
     side: THREE.DoubleSide, fog: false, toneMapped: false,
+    forceSinglePass: true,       // additive: back-then-front ordering is pointless, and it doubled the draws and programs
   });
   matHalo.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <colorspace_fragment>', '');

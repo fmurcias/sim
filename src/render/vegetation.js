@@ -629,6 +629,18 @@ export class Vegetation {
     this._placed();
   }
 
+  /**
+   * Makes every full-detail mesh draw one (invisible) instance until the next
+   * LOD update, so a warm-up frame builds their shaders — shadow pass
+   * included — before the first real tree comes into range.
+   */
+  touchAll() {
+    for (const v of this.variants) {
+      if (!v.full) continue;
+      for (const m of [v.full.bark, v.full.leaves, v.full.pre]) m.count = Math.max(m.count, 1);
+    }
+  }
+
   setVisible(v) {
     this.visible = v;
     this.variants.forEach(x => { x.full.bark.visible = x.full.leaves.visible = v; });
